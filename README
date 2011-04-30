@@ -1,0 +1,17 @@
+This python script takes a list of tv shows, scrapes thetvdb.com and the xbmc mysql db, and creates a list of missing episodes. 
+
+It then uses BeautifulSoup to search the pirate bay and btjunkie for these episodes, and adds them to deluge via the deluge rpc interface.
+
+Currently, only the mysql xbmc db is supported - it would be trivial to rewrite this to use the standard sqlite db, but as I don't use this I probably won't add support in the foreseeable future.
+
+The script requires that a table called urls_seen is available (in the xbmc db or in a different one, currently need to hand edit the db connection params in the script to change this)
+
+The table takes the form:
++----------+-------------+------+-----+---------+-------+
+| Field    | Type        | Null | Key | Default | Extra |
++----------+-------------+------+-----+---------+-------+
+| showname | varchar(64) | NO   |     | NULL    |       |
+| episode  | varchar(64) | NO   |     | NULL    |       |
+| url      | varchar(64) | NO   |     | NULL    |       |
++----------+-------------+------+-----+---------+-------+
+
