@@ -30,7 +30,7 @@ dl_these = []
 # Set up the logger to print out errors
 setupLogger()
 log = logging.getLogger("test.log")
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
 handler_stream = logging.StreamHandler()
 handler_stream.setFormatter(formatter)
@@ -40,41 +40,28 @@ handler_file = logging.FileHandler('/home/gom/log/auto_torrent_%s.log' % (start_
 handler_file.setFormatter(formatter)
 log.addHandler(handler_file)
 
-log.info("Initiating Automatic Torrent Download [beep boop boop beep]")
-
 config = ConfigParser.ConfigParser()
 config.read("/home/gom/.autotorrent/config.ini")
-
-log.debug("")
-log.debug("Values from config file:")
 
 # Attempt to get values from config file
 try:
     use_whole_lib = config.getboolean("options", "scan_all_shows_xbmc")
 except:
     use_whole_lib = False
-log.debug("use_whole_lib:%s " % use_whole_lib)
-
 try:
     force_learn = config.getboolean("options", "force_learn")
 except:
     force_learn = False
-log.debug("force_learn:%s " % force_learn)
-
 try:
     tv_dir = config.get("options", "tv_dir")
 except:
     tv_dir = "/media/twoTB1/videos/tv/"
-log.debug("tv_dir:%s " % tv_dir)
-
 try:
     shows_file = config.get("options", "shows_file")
 except:
     shows_file = None
-log.debug("shows_file:%s " % shows_file)
 
-log.debug("")
-# parse arg list - this will override anything in the onfig file that conflicts
+# parse arg list - this will override anything in the config file that conflicts
 if len(sys.argv) > 1:
     for arg in sys.argv:
         if(arg == "--usexbmc" or arg == "-x"):
@@ -83,7 +70,25 @@ if len(sys.argv) > 1:
         if(arg == "--learn" or arg == "-l"):
             force_learn = True
             log.debug("Param \"--usewholelib\" detected, Overriding:")
+        if(arg == "--help" or arg == "-h"):
+            print "Usage:"
+            print "autotorrent.py"
+            print "Options:"
+            print "\t--usexbmc or -x"
+            print "\t\t Uses entire xbmc tv shows library"
+            print "\t--learn or -l"
+            print "\t\t forces autotorrent to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
+            print "\t--help or -h"
+            print "\t\tPrint help and exit"
+            sys.exit()
 
+log.info("Initiating Automatic Torrent Download [beep boop boop beep]")
+log.debug("")
+log.debug("Using params:")
+log.debug("use_whole_lib: %s " % use_whole_lib)
+log.debug("force_learn: %s " % force_learn)
+log.debug("tv_dir: %s " % tv_dir)
+log.debug("shows_file: %s " % shows_file)
 log.debug("")
 shows_list = []
 if(shows_file):
@@ -139,6 +144,7 @@ def hunt_eps(s):
                     pass
     except:
         log.error("Could not get episode list from thetvdb (timeout?)")
+        return
     
     # use the mysql lib to access xbmc db, cross check episode lists
     try:
@@ -172,7 +178,7 @@ def hunt_eps(s):
         log.info("done getting episodes, searching thepiratebay.org for: %s" % (ep_list))
         for val in ep_list:
             found = False
-            search_url = "http://thepiratebay.org/search/" + "+".join(series_name.split(" ")) + "+" + val + "/0/7/0"
+            search_url = "http://thepiratebay.org/search/" + "+".join(series_name.split(" ")).replace("'","") + "+" + val + "/0/7/0"
             regex = re.compile(".*torrent$")
             try:
                 response = urllib2.urlopen(search_url)
@@ -196,7 +202,8 @@ def hunt_eps(s):
             log.info("Could not find torrent for piratebay, searching www.btjunkie.org for: %s" % (val))
             good = 0
             fake = 0
-            search_url = "http://btjunkie.org/search?q=" + "+".join(series_name.split(" ")) + "+" + val
+            search_url = "http://btjunkie.org/search?q=" + "+".join(series_name.split(" ")).replace("'","") + "+" + val
+            log.debug("Trying: %s" % search_url)
             response = urllib2.urlopen(search_url)
             search_page = response.read()
             response.close()
@@ -268,7 +275,7 @@ def on_connect_success(result):
 		#add url to database - ideally would be nice to do this in callback, but dont have info there?
     	tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"%s\")""" % (tp["showname"],tp["episode"],tp["url"]))
     tmc.close()
-    log.info("Init list: %s" % init_list)
+    log.debug("Init list: %s" % init_list)
     dl = defer.DeferredList(init_list)
     dl.addCallback(dlfinish)
 
