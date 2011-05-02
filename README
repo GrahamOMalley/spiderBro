@@ -15,3 +15,11 @@ The table takes the form:
 | url      | varchar(64) | NO   |     | NULL    |       |
 +----------+-------------+------+-----+---------+-------+
 
+There also needs to be another table in the schema, called "finished_shows", that takes the form:
+
++----------+-------------+------+-----+---------+-------+
+| Field    | Type        | Null | Key | Default | Extra |
++----------+-------------+------+-----+---------+-------+
+| showname | varchar(64) | NO   |     | NULL    |       |
++----------+-------------+------+-----+---------+-------+
+

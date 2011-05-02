@@ -27,18 +27,6 @@ import string
 start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
 dl_these = []
 
-# Set up the logger to print out errors
-setupLogger()
-log = logging.getLogger("test.log")
-log.setLevel(logging.INFO)
-formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
-handler_stream = logging.StreamHandler()
-handler_stream.setFormatter(formatter)
-handler_stream.setLevel(logging.ERROR)
-log.addHandler(handler_stream)
-handler_file = logging.FileHandler('/home/gom/log/auto_torrent_%s.log' % (start_time))
-handler_file.setFormatter(formatter)
-log.addHandler(handler_file)
 
 config = ConfigParser.ConfigParser()
 config.read("/home/gom/.autotorrent/config.ini")
@@ -60,16 +48,25 @@ try:
     shows_file = config.get("options", "shows_file")
 except:
     shows_file = None
+try:
+    log_dir = config.get("options", "log_dir")
+except:
+    log_dir = "/home/gom/log"
+try:
+    use_debug_logging = config.getboolean("options", "use_debug_logging")
+except:
+    use_debug_logging = False
+
 
 # parse arg list - this will override anything in the config file that conflicts
 if len(sys.argv) > 1:
     for arg in sys.argv:
+        if(arg == "--verbose" or arg == "-v"):
+            use_debug_logging = True
         if(arg == "--usexbmc" or arg == "-x"):
             use_whole_lib = True
-            log.debug("Param \"--usexbmc\" detected, Overriding:")
         if(arg == "--learn" or arg == "-l"):
             force_learn = True
-            log.debug("Param \"--usewholelib\" detected, Overriding:")
         if(arg == "--help" or arg == "-h"):
             print "Usage:"
             print "autotorrent.py"
@@ -82,6 +79,22 @@ if len(sys.argv) > 1:
             print "\t\tPrint help and exit"
             sys.exit()
 
+# Set up the logger to print out errors
+setupLogger()
+log = logging.getLogger("test.log")
+if (use_debug_logging):
+    log.setLevel(logging.DEBUG)
+else:
+    log.setLevel(logging.INFO)
+formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
+handler_stream = logging.StreamHandler()
+handler_stream.setFormatter(formatter)
+handler_stream.setLevel(logging.CRITICAL)
+log.addHandler(handler_stream)
+handler_file = logging.FileHandler('%s/auto_torrent_%s.log' % (log_dir, start_time))
+handler_file.setFormatter(formatter)
+log.addHandler(handler_file)
+
 log.info("Initiating Automatic Torrent Download [beep boop boop beep]")
 log.debug("")
 log.debug("Using params:")
@@ -89,9 +102,13 @@ log.debug("use_whole_lib: %s " % use_whole_lib)
 log.debug("force_learn: %s " % force_learn)
 log.debug("tv_dir: %s " % tv_dir)
 log.debug("shows_file: %s " % shows_file)
+log.debug("log_dir: %s " % log_dir)
+log.debug("use_debug_logging: %s " % use_debug_logging)
 log.debug("")
+
+
 shows_list = []
-if(shows_file):
+if(shows_file and not use_whole_lib):
 	try:
 		f = open(shows_file)
 		try:
@@ -103,13 +120,25 @@ if(shows_file):
 		log.error("Cannot open shows file, exiting")
 		sys.exit()
 
-# some regexes we will be using
+ignore_list = []
+
+tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
+tmc = tempmysql_con.cursor()
+tmc.execute("""select distinct * from finished_shows""")
+for show in tmc:
+    ignore_list.append(show[0])
+tmc.close()
+tempmysql_con.close()
+
+shows_list = [val for val in shows_list if val not in ignore_list]
+# some regexs we will be using
 g = re.compile(r'Good\((.*?)\)', re.DOTALL) 
 f = re.compile(r'Fake\((.*?)\)', re.DOTALL) 
+is_torrent = re.compile(".*torrent$")
 
 def hunt_eps(s):
     series_name = s
-    c = 0
+    ended = False
     log.info("Looking for eps for: %s" % (series_name))
     try:
 		# get the series id from thetvdb.com
@@ -119,7 +148,8 @@ def hunt_eps(s):
         series_id = soup.data.series.seriesid.string
 		# now get the info for the series
         data = BeautifulSoup(urllib2.urlopen("http://thetvdb.com/data/series/%s/all/" % str(series_id))).data
-        
+        if(data.series.status.string == "Ended"):
+            ended = True
 		# data structures to keep track of episodes
         aired_list = []
         have_list = []
@@ -143,7 +173,8 @@ def hunt_eps(s):
                     #log.debug(debu)
                     pass
     except:
-        log.error("Could not get episode list from thetvdb (timeout?)")
+        log.error("\tCould not get episode list from thetvdb (timeout?)")
+        log.error("")
         return
     
     # use the mysql lib to access xbmc db, cross check episode lists
@@ -172,73 +203,78 @@ def hunt_eps(s):
     except:
         log.error("Database error?")
 
-    # get the intersection, search torrent sites for episodes
+    # get the episodes, search torrent sites for episodes
     ep_list = [val for val in aired_list if val not in have_list]
-    if ep_list:
-        log.info("done getting episodes, searching thepiratebay.org for: %s" % (ep_list))
+    if ended and not ep_list:
+        log.info("Got all episodes for this, cache in new table")
+        tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
+        tmc = tempmysql_con.cursor()
+        tmc.execute("""insert into finished_shows (showname) VALUES (\"%s\")""" % (series_name))
+        tmc.close()
+        tempmysql_con.close()
+        return
+    elif ep_list:
         for val in ep_list:
             found = False
+            log.info("\tSearching thepiratebay.org for: %s" % (val))
             search_url = "http://thepiratebay.org/search/" + "+".join(series_name.split(" ")).replace("'","") + "+" + val + "/0/7/0"
-            regex = re.compile(".*torrent$")
             try:
                 response = urllib2.urlopen(search_url)
                 search_page = response.read()
                 sps = BeautifulSoup(search_page)
                 links = sps.findAll('a', href=re.compile("^http"))
                 if links:
-                    if(regex.match(links[0]['href'])):
+                    if(is_torrent.match(links[0]['href'])):
                         if(val in links[0]['href'].lower()):
                             if("swesub" not in links[0]['href'].lower()):
-                                log.info("Found torrent: %s" % (links[0]['href']))
+                                log.info("\t\tFound torrent: %s" % (links[0]['href']))
                                 t = links[0]['href'], dir
                                 dict = {'url': links[0]['href'], "save_dir":dir, 'showname':series_name, "episode":val}
                                 dl_these.append(dict)
                                 found = True
             except:
                 log.error("Pirate bay timed out?")
-	    
-        if not found:
-            #search btjunkie too
-            log.info("Could not find torrent for piratebay, searching www.btjunkie.org for: %s" % (val))
-            good = 0
-            fake = 0
-            search_url = "http://btjunkie.org/search?q=" + "+".join(series_name.split(" ")).replace("'","") + "+" + val
-            log.debug("Trying: %s" % search_url)
-            response = urllib2.urlopen(search_url)
-            search_page = response.read()
-            response.close()
-            sps = BeautifulSoup(search_page)
-            links = sps.findAll('a', href=re.compile("^http"))
-            if links:
-                if(regex.match(links[0]['href'])):
-                    if(val in links[0]['href'].lower()):
-                        # dont want episodes with the "swesub" tag in them
-                        # TODO: if this becomes a problem, create a list of undesirable tags
-                        if("swesub" not in links[0]['href'].lower()):
-                            log.info("Found torrent: " + (links[0]['href']) + ", attempting to validate...")
-                            turl = links[0]['href'].replace("/download.torrent", "").replace("dl.", "")
-                            log.debug('turl: %s' % turl)
-                            resp = urllib2.urlopen(turl)
-                            validate_page = resp.read()
-                            val_tags = BeautifulSoup(validate_page)
-                            b = val_tags.findAll('b')
-                            for bs in b:
-                                if bs.string:
-                                    if g.match(bs.string):
-                                        good = int(g.findall(bs.string)[0])
-                                        l = bs.string.split(" ")
-                                        for v in l:
-                                            if f.match(v):
-                                                fake = int(f.findall(v)[0])
 
-                            if(good >= fake):
-                                log.info("Torrent Validated, adding...")
-                                t = links[0]['href'], dir
-                                dict = {'url': links[0]['href'], "save_dir":dir, 'showname':series_name, "episode":val}
-                                dl_these.append(dict)
-                                found = True
-                            else:
-                                log.info("Torrent failed validation")
+            if not found:
+	            #search btjunkie too
+	            log.info("\tSearching www.btjunkie.org for: %s" % (val))
+	            good = 0
+	            fake = 0
+	            search_url = "http://btjunkie.org/search?q=" + "+".join(series_name.split(" ")).replace("'","") + "+" + val
+	            response = urllib2.urlopen(search_url)
+	            search_page = response.read()
+	            response.close()
+	            sps = BeautifulSoup(search_page)
+	            links = sps.findAll('a', href=re.compile("^http"))
+	            if links:
+	                if(is_torrent.match(links[0]['href'])):
+	                    if(val in links[0]['href'].lower()):
+	                        # dont want episodes with the "swesub" tag in them
+	                        # TODO: if this becomes a problem, create a list of undesirable tags
+	                        if("swesub" not in links[0]['href'].lower()):
+	                            log.info("\t\tFound torrent: " + (links[0]['href']))
+	                            turl = links[0]['href'].replace("/download.torrent", "").replace("dl.", "")
+	                            resp = urllib2.urlopen(turl)
+	                            validate_page = resp.read()
+	                            val_tags = BeautifulSoup(validate_page)
+	                            b = val_tags.findAll('b')
+	                            for bs in b:
+	                                if bs.string:
+	                                    if g.match(bs.string):
+	                                        good = int(g.findall(bs.string)[0])
+	                                        l = bs.string.split(" ")
+	                                        for v in l:
+	                                            if f.match(v):
+	                                                fake = int(f.findall(v)[0])
+	
+                                if(good > fake):
+                                    log.info("\t\tTorrent Validated, adding...")
+                                    t = links[0]['href'], dir
+                                    dict = {'url': links[0]['href'], "save_dir":dir, 'showname':series_name, "episode":val}
+                                    dl_these.append(dict)
+                                    found = True
+                                else:
+                                    log.info("\t\tTorrent failed validation! Good:%s Fake:%s" % (str(good), str(fake)))
             if not found:
                 #check episode is not in current season, do not search again if so
                 ep_season = int(val.split("e")[0].replace("s", ""))
@@ -250,6 +286,7 @@ def hunt_eps(s):
                     tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"None\")""" % (series_name, val))
                     tmc.close()
                     tempmysql_con.close()
+            log.info("")
 
 # deferred for clean exit
 def dlfinish(result):
@@ -292,7 +329,8 @@ if(use_whole_lib):
     mc = mysql_con.cursor()
     mc.execute("""select distinct strTitle from episodeview order by strTitle""")
     for show in mc:
-       	hunt_eps(show[0])
+        if(show[0] not in ignore_list):
+            hunt_eps(show[0])
 
 else:
     if(shows_list):
