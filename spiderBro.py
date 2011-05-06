@@ -210,7 +210,7 @@ def hunt_eps(s):
     # get the episodes, search torrent sites for episodes
     ep_list = [val for val in aired_list if val not in have_list]
     if ended and not ep_list:
-        log.info("Got all episodes for this, cache in new table")
+        log.info("%s is complete. Show will be skipped in future..." % (series_name))
         tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
         tmc = tempmysql_con.cursor()
         tmc.execute("""insert into finished_shows (showname) VALUES (\"%s\")""" % (series_name))
@@ -219,6 +219,8 @@ def hunt_eps(s):
         return
     elif ep_list:
         for val in ep_list:
+            # TODO: this needs a re-arch. I need some kind of class hierarchy/pattern that lets me use modular torrent sites that can be added from a list
+            #       need to learn more about deriving classes in python to implement this
             found = False
             log.info("\tSearching thepiratebay.org for: %s" % (val))
             search_url = "http://thepiratebay.org/search/" + "+".join(series_name.split(" ")).replace("'","") + "+" + val + "/0/7/0"
@@ -254,7 +256,7 @@ def hunt_eps(s):
 	                if(is_torrent.match(links[0]['href'])):
 	                    if(val in links[0]['href'].lower()):
 	                        # dont want episodes with the "swesub" tag in them
-	                        # TODO: if this becomes a problem, create a list of undesirable tags
+	                        # TODO: create a list of undesirable tags, check against all of them
 	                        if("swesub" not in links[0]['href'].lower()):
 	                            log.info("\t\tFound torrent: " + (links[0]['href']))
 	                            turl = links[0]['href'].replace("/download.torrent", "").replace("dl.", "")
@@ -314,14 +316,14 @@ def on_connect_success(result):
         di = {'download_location':tp['save_dir']}
         df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
         init_list.append(df)
-		#add url to database - ideally would be nice to do this in callback, but dont have info there?
+		# add url to database - ideally would be nice to do this in add_tor callback, but dont have info there (investigate...)
     	tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"%s\")""" % (tp["showname"],tp["episode"],tp["url"]))
     tmc.close()
     log.debug("Init list: %s" % init_list)
     dl = defer.DeferredList(init_list)
     dl.addCallback(dlfinish)
 
-# We create another callback function to be called when an error is encountered
+# callback function to be called when an error is encountered
 def on_connect_fail(result):
     print "Connection failed!"
     print "result:", result
@@ -329,7 +331,7 @@ def on_connect_fail(result):
 
 if(use_whole_lib):
     log.info("Scanning entire XBMC library, this could take some time...")
-    # we get the complete list of shows from xbmc, minus the finished shows (if any)
+    # get the complete list of shows from xbmc, minus the finished shows (if any)
     mysql_con = MySQLdb.connect (host = "localhost",user = "xbmc",passwd = "xbmc",db = "xbmc_video")
     mc = mysql_con.cursor()
     mc.execute("""select distinct strTitle from episodeview order by strTitle""")
@@ -353,9 +355,8 @@ else:
 # We get a Deferred object from this method and we use this to know if and when
 # the connection succeeded or failed.
 d = client.connect()
-# We add the callback to the Deferred object we got from connect()
+# add the callback to the Deferred object we got from connect()
 d.addCallback(on_connect_success)
-# We add the callback (in this case it's an errback, for error)
 d.addErrback(on_connect_fail)
 # Run the twisted main loop to make everything go
 reactor.run()
