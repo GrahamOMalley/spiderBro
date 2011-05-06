@@ -4,9 +4,10 @@ It then uses BeautifulSoup to search the pirate bay and btjunkie for these episo
 
 Currently, only the mysql xbmc db is supported - it would be trivial to rewrite this to use the standard sqlite db, but as I don't use this I probably won't add support in the foreseeable future.
 
-The script requires that a table called urls_seen is available (in the xbmc db or in a different one, currently need to hand edit the db connection params in the script to change this)
+The script requires that a db schema is available called "torrents" (user/pass is "torrents" too)
+The schema has two tables, urls_seen and finished_shows
 
-The table takes the form:
+urls_seen takes the form:
 +----------+-------------+------+-----+---------+-------+
 | Field    | Type        | Null | Key | Default | Extra |
 +----------+-------------+------+-----+---------+-------+
@@ -15,8 +16,7 @@ The table takes the form:
 | url      | varchar(64) | NO   |     | NULL    |       |
 +----------+-------------+------+-----+---------+-------+
 
-There also needs to be another table in the schema, called "finished_shows", that takes the form:
-
+finished_shows takes the form:
 +----------+-------------+------+-----+---------+-------+
 | Field    | Type        | Null | Key | Default | Extra |
 +----------+-------------+------+-----+---------+-------+
