@@ -98,15 +98,15 @@ log.addHandler(handler_file)
 log.info("Initiating Automatic Torrent Download [beep boop boop beep]")
 log.debug("")
 log.debug("Using params:")
+log.debug("use_debug_logging: %s " % use_debug_logging)
 log.debug("use_whole_lib: %s " % use_whole_lib)
 log.debug("force_learn: %s " % force_learn)
 log.debug("tv_dir: %s " % tv_dir)
-log.debug("shows_file: %s " % shows_file)
 log.debug("log_dir: %s " % log_dir)
-log.debug("use_debug_logging: %s " % use_debug_logging)
+log.debug("shows_file: %s " % shows_file)
 log.debug("")
 
-
+# If using the shows file, open and get shows list
 shows_list = []
 if(shows_file and not use_whole_lib):
 	try:
@@ -120,8 +120,8 @@ if(shows_file and not use_whole_lib):
 		log.error("Cannot open shows file, exiting")
 		sys.exit()
 
+# Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably in my case
 ignore_list = []
-
 tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
 tmc = tempmysql_con.cursor()
 tmc.execute("""select distinct * from finished_shows""")
@@ -131,11 +131,13 @@ tmc.close()
 tempmysql_con.close()
 
 shows_list = [val for val in shows_list if val not in ignore_list]
+
 # some regexs we will be using
 g = re.compile(r'Good\((.*?)\)', re.DOTALL) 
 f = re.compile(r'Fake\((.*?)\)', re.DOTALL) 
 is_torrent = re.compile(".*torrent$")
 
+# The function that actually grabs our episodes
 def hunt_eps(s):
     series_name = s
     ended = False
@@ -191,14 +193,16 @@ def hunt_eps(s):
             have_list.append("s"+season+"e"+ep)
 
         mc.close()
-        # create new db con to torrents db, populate from here aswell
+        mysql_con.close()
 
+        # create new db con to torrents db, populate from here aswell
         mysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
         tmc = mysql_con.cursor()
         tmc.execute("""select distinct episode from urls_seen where showname = \"%s\"""" % series_name)
         for cur in tmc:
             have_list.append(cur[0])
         tmc.close()
+        mysql_con.close()
 
     except:
         log.error("Database error?")
@@ -255,10 +259,11 @@ def hunt_eps(s):
 	                            log.info("\t\tFound torrent: " + (links[0]['href']))
 	                            turl = links[0]['href'].replace("/download.torrent", "").replace("dl.", "")
 	                            resp = urllib2.urlopen(turl)
-	                            validate_page = resp.read()
-	                            val_tags = BeautifulSoup(validate_page)
-	                            b = val_tags.findAll('b')
-	                            for bs in b:
+	                            # due to btjunkie having occasional broken/fake torrents, need some additional validation
+                                validate_page = resp.read()
+                                val_tags = BeautifulSoup(validate_page)
+                                b = val_tags.findAll('b')
+                                for bs in b:
 	                                if bs.string:
 	                                    if g.match(bs.string):
 	                                        good = int(g.findall(bs.string)[0])
@@ -324,13 +329,15 @@ def on_connect_fail(result):
 
 if(use_whole_lib):
     log.info("Scanning entire XBMC library, this could take some time...")
-    # If we're feeling adventurous, we can get the complete list of shows from xbmc (this takes FOREVER to scrape the info though)
+    # we get the complete list of shows from xbmc, minus the finished shows (if any)
     mysql_con = MySQLdb.connect (host = "localhost",user = "xbmc",passwd = "xbmc",db = "xbmc_video")
     mc = mysql_con.cursor()
     mc.execute("""select distinct strTitle from episodeview order by strTitle""")
     for show in mc:
         if(show[0] not in ignore_list):
             hunt_eps(show[0])
+    mc.close()
+    mysql_con.close()
 
 else:
     if(shows_list):
