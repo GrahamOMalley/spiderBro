@@ -8,28 +8,16 @@
 #
 #####################################################################################
 
-import urllib2
-from BeautifulSoup import BeautifulSoup
-from datetime import date
-from datetime import datetime
-import MySQLdb
-import re
-from deluge.ui.client import client
-from twisted.internet import defer
-from twisted.internet import reactor
-from deluge.log import setupLogger
-import logging
-import sys
-import ConfigParser
-import string
-
+from sb_utils import *
 # globals
 start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
+db_mask = sNeN()
+masks_list = [NxN, sNeN]
+search_list = [piratebaysearch, btjunkiesearch]
 dl_these = []
 
-
 config = ConfigParser.ConfigParser()
-config.read("/home/gom/.autotorrent/config.ini")
+config.read("/home/gom/.spiderBro/config.ini")
 
 # Attempt to get values from config file
 try:
@@ -69,12 +57,12 @@ if len(sys.argv) > 1:
             force_learn = True
         if(arg == "--help" or arg == "-h"):
             print "Usage:"
-            print "autotorrent.py"
+            print "spiderBro.py"
             print "Options:"
             print "\t--usexbmc or -x"
             print "\t\t Uses entire xbmc tv shows library"
             print "\t--learn or -l"
-            print "\t\t forces autotorrent to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
+            print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
             print "\t--help or -h"
             print "\t\tPrint help and exit"
             sys.exit()
@@ -91,7 +79,7 @@ handler_stream = logging.StreamHandler()
 handler_stream.setFormatter(formatter)
 handler_stream.setLevel(logging.CRITICAL)
 log.addHandler(handler_stream)
-handler_file = logging.FileHandler('%s/auto_torrent_%s.log' % (log_dir, start_time))
+handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (log_dir, start_time))
 handler_file.setFormatter(formatter)
 log.addHandler(handler_file)
 
@@ -132,19 +120,14 @@ tempmysql_con.close()
 
 shows_list = [val for val in shows_list if val not in ignore_list]
 
-# some regexs we will be using
-g = re.compile(r'Good\((.*?)\)', re.DOTALL) 
-f = re.compile(r'Fake\((.*?)\)', re.DOTALL) 
-is_torrent = re.compile(".*torrent$")
-
 # The function that actually grabs our episodes
 def hunt_eps(s):
     series_name = s
+    dir = tv_dir + series_name.replace(" ", "_").replace("'", "").lower()
     ended = False
     log.info("Looking for eps for: %s" % (series_name))
     try:
 		# get the series id from thetvdb.com
-        dir = tv_dir + series_name.replace(" ", "_").replace("'", "").lower()
         page = urllib2.urlopen("http://cache.thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
         soup = BeautifulSoup(page)
         series_id = soup.data.series.seriesid.string
@@ -162,23 +145,19 @@ def hunt_eps(s):
             if(i.seasonnumber.string != '0'):
        	        season = i.seasonnumber.string
     	        highest_season = max(highest_season, int(i.seasonnumber.string))
-            	if(int(season) < 10): season = '0' + season
                 ep = i.episodenumber.string
-                if(int(ep) < 10): ep = '0' + ep
                 try:
                     fa = i.firstaired.string.split('-')
                     airdate = date(int(fa[0]), int(fa[1]), int(fa[2]))
                     # need to compare current date to air date, ignore if not aired yet
                     if date.today() > airdate:
-                        aired_list.append("s"+season+"e"+ep)
+                        aired_list.append((season, ep))
                 except:
-                    #log.debug(debu)
                     pass
     except:
         log.error("\tCould not get episode list from thetvdb (timeout?)")
         log.error("")
         return
-    
     # use the mysql lib to access xbmc db, cross check episode lists
     try:
         mysql_con = MySQLdb.connect (host = "localhost",user = "xbmc",passwd = "xbmc",db = "xbmc_video")
@@ -186,11 +165,7 @@ def hunt_eps(s):
         # SELECT season number, episode number from show
         mc.execute("""select c12,c13 from episodeview where strtitle = \"%s\"""" % series_name)
         for cur in mc:
-            season = cur[0]
-            ep = cur[1]
-            if(int(season) < 10): season = '0' + season
-            if(int(ep) < 10): ep = '0' + ep
-            have_list.append("s"+season+"e"+ep)
+            have_list.append((str(cur[0]), str(cur[1])))
 
         mc.close()
         mysql_con.close()
@@ -200,17 +175,21 @@ def hunt_eps(s):
         tmc = mysql_con.cursor()
         tmc.execute("""select distinct episode from urls_seen where showname = \"%s\"""" % series_name)
         for cur in tmc:
-            have_list.append(cur[0])
+            s = str(int(cur[0].split('e')[0].replace("s", "")))
+            e = str(int(cur[0].split('e')[1].replace("e", "")))
+            have_list.append((s, e))
         tmc.close()
         mysql_con.close()
 
-    except:
+    except ValueError as v:
         log.error("Database error?")
+        print v
+        sys.exit()
 
     # get the episodes, search torrent sites for episodes
     ep_list = [val for val in aired_list if val not in have_list]
     if ended and not ep_list:
-        log.info("%s is complete. Show will be skipped in future..." % (series_name))
+        log.info("Got all episodes for this, cache in new table")
         tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
         tmc = tempmysql_con.cursor()
         tmc.execute("""insert into finished_shows (showname) VALUES (\"%s\")""" % (series_name))
@@ -218,73 +197,34 @@ def hunt_eps(s):
         tempmysql_con.close()
         return
     elif ep_list:
-        for val in ep_list:
-            # TODO: this needs a re-arch. I need some kind of class hierarchy/pattern that lets me use modular torrent sites that can be added from a list
-            #       need to learn more about deriving classes in python to implement this
+        for s, e in ep_list:
             found = False
-            log.info("\tSearching thepiratebay.org for: %s" % (val))
-            search_url = "http://thepiratebay.org/search/" + "+".join(series_name.split(" ")).replace("'","") + "+" + val + "/0/7/0"
-            try:
-                response = urllib2.urlopen(search_url)
-                search_page = response.read()
-                sps = BeautifulSoup(search_page)
-                links = sps.findAll('a', href=re.compile("^http"))
-                if links:
-                    if(is_torrent.match(links[0]['href'])):
-                        if(val in links[0]['href'].lower()):
-                            if("swesub" not in links[0]['href'].lower()):
-                                log.info("\t\tFound torrent: %s" % (links[0]['href']))
-                                t = links[0]['href'], dir
-                                dict = {'url': links[0]['href'], "save_dir":dir, 'showname':series_name, "episode":val}
+            val = db_mask.mask(s, e)
+            for site_ctor in search_list:
+                if not found:
+                    for mk_ctor in masks_list:
+                        #logpoint using mask
+                        mk = mk_ctor()
+                        mskinf = mk.mask(s,e)
+                        site = site_ctor()
+                        log.info("\tSearching %s using mask %s" % (site.name, mskinf))
+                        try:
+                            url = site.search(series_name, s, e, mk_ctor)
+                            if url:
+                                log.info("\tFound torrent: %s" % url)
+                                val = db_mask.mask(s, e)
+                                dict = {'url':url, "save_dir":dir, 'showname':series_name, "episode":val}
                                 dl_these.append(dict)
                                 found = True
-            except:
-                log.error("Pirate bay timed out?")
-
-            if not found:
-	            #search btjunkie too
-	            log.info("\tSearching www.btjunkie.org for: %s" % (val))
-	            good = 0
-	            fake = 0
-	            search_url = "http://btjunkie.org/search?q=" + "+".join(series_name.split(" ")).replace("'","") + "+" + val
-	            response = urllib2.urlopen(search_url)
-	            search_page = response.read()
-	            response.close()
-	            sps = BeautifulSoup(search_page)
-	            links = sps.findAll('a', href=re.compile("^http"))
-	            if links:
-	                if(is_torrent.match(links[0]['href'])):
-	                    if(val in links[0]['href'].lower()):
-	                        # dont want episodes with the "swesub" tag in them
-	                        # TODO: create a list of undesirable tags, check against all of them
-	                        if("swesub" not in links[0]['href'].lower()):
-	                            log.info("\t\tFound torrent: " + (links[0]['href']))
-	                            turl = links[0]['href'].replace("/download.torrent", "").replace("dl.", "")
-	                            resp = urllib2.urlopen(turl)
-	                            # due to btjunkie having occasional broken/fake torrents, need some additional validation
-                                validate_page = resp.read()
-                                val_tags = BeautifulSoup(validate_page)
-                                b = val_tags.findAll('b')
-                                for bs in b:
-	                                if bs.string:
-	                                    if g.match(bs.string):
-	                                        good = int(g.findall(bs.string)[0])
-	                                        l = bs.string.split(" ")
-	                                        for v in l:
-	                                            if f.match(v):
-	                                                fake = int(f.findall(v)[0])
-	
-                                if(good > fake):
-                                    log.info("\t\tTorrent Validated, adding...")
-                                    t = links[0]['href'], dir
-                                    dict = {'url': links[0]['href'], "save_dir":dir, 'showname':series_name, "episode":val}
-                                    dl_these.append(dict)
-                                    found = True
-                                else:
-                                    log.info("\t\tTorrent failed validation! Good:%s Fake:%s" % (str(good), str(fake)))
+                                break
+                        except AttributeError as ex:
+                            log.error("%s timed out?" % ex)
+                        except:
+                            print "Unexpected error:", sys.exc_info()[0]
+                            log.error("%s timed out?" % site.name)
             if not found:
                 #check episode is not in current season, do not search again if so
-                ep_season = int(val.split("e")[0].replace("s", ""))
+                ep_season = int(s)
                 if ((ep_season < highest_season) or (force_learn)):
                     log.info("Cannot find torrent for: %s %s - skipping this in future" % (series_name, val))
                     #cache in db
@@ -316,14 +256,14 @@ def on_connect_success(result):
         di = {'download_location':tp['save_dir']}
         df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
         init_list.append(df)
-		# add url to database - ideally would be nice to do this in add_tor callback, but dont have info there (investigate...)
+		#add url to database - ideally would be nice to do this in callback, but dont have info there?
     	tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"%s\")""" % (tp["showname"],tp["episode"],tp["url"]))
     tmc.close()
     log.debug("Init list: %s" % init_list)
     dl = defer.DeferredList(init_list)
     dl.addCallback(dlfinish)
 
-# callback function to be called when an error is encountered
+# We create another callback function to be called when an error is encountered
 def on_connect_fail(result):
     print "Connection failed!"
     print "result:", result
@@ -331,7 +271,7 @@ def on_connect_fail(result):
 
 if(use_whole_lib):
     log.info("Scanning entire XBMC library, this could take some time...")
-    # get the complete list of shows from xbmc, minus the finished shows (if any)
+    # we get the complete list of shows from xbmc, minus the finished shows (if any)
     mysql_con = MySQLdb.connect (host = "localhost",user = "xbmc",passwd = "xbmc",db = "xbmc_video")
     mc = mysql_con.cursor()
     mc.execute("""select distinct strTitle from episodeview order by strTitle""")
@@ -355,8 +295,9 @@ else:
 # We get a Deferred object from this method and we use this to know if and when
 # the connection succeeded or failed.
 d = client.connect()
-# add the callback to the Deferred object we got from connect()
+# We add the callback to the Deferred object we got from connect()
 d.addCallback(on_connect_success)
+# We add the callback (in this case it's an errback, for error)
 d.addErrback(on_connect_fail)
 # Run the twisted main loop to make everything go
 reactor.run()
