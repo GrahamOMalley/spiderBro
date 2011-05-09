@@ -13,7 +13,7 @@ from sb_utils import *
 
 # globals
 start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
-# dont change db_mask unless you want to delete the db and start over...
+# dont change db_mask after using spiderbro for the first time, it'll mess up thesurls_seen table
 db_mask = sNeN()
 # these could be made configurable
 polite_value = 5
@@ -73,10 +73,12 @@ if len(sys.argv) > 1:
             print "Usage:"
             print "spiderBro.py"
             print "Options:"
-            print "\t--usexbmc or -x"
-            print "\t\t Uses entire xbmc tv shows library"
             print "\t--learn or -l"
             print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
+            print "\t--polite or -p"
+            print "\t\t forces spiderBro to wait 5 seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
+            print "\t--usexbmc or -x"
+            print "\t\t Uses entire xbmc tv shows library"
             print "\t--help or -h"
             print "\t\tPrint help and exit"
             sys.exit()
@@ -122,7 +124,7 @@ if(shows_file and not use_whole_lib):
         log.error("Cannot open shows file, exiting")
         sys.exit()
 
-# Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably in my case
+# Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably
 ignore_list = []
 tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
 tmc = tempmysql_con.cursor()
