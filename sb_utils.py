@@ -15,6 +15,18 @@ import logging
 import sys
 import ConfigParser
 
+class season:
+    def __init__(self):
+        self.descr = "season"
+    def mask(self, sn, ep):
+        return ("season %s" % sn)
+
+class series:
+    def __init__(self):
+        self.descr = "series"
+    def mask(self, sn, ep):
+        return ("series %s" % sn)
+
 class sNeN:
     def __init__(self):
         self.descr = "sNeN"
@@ -35,43 +47,65 @@ class piratebaysearch:
         self.name = "piratebay"
     def search(self, series_name, sn, ep, fmask):
         is_torrent = re.compile(".*torrent$")
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'"])
         m = fmask()
         val = m.mask(sn, ep)
-        search_url = "http://thepiratebay.org/search/" + "+".join(series_name.split(" ")).replace("'","") + "+" + val + "/0/7/0"
+        #piratebay torrents use _ as a delimiter
+        search_url = "http://thepiratebay.org/search/"+"+".join(series_name.split(" ")).replace("'","")+"+"+"+".join(val.split(" ")) + "/0/7/0"
         response = urllib2.urlopen(search_url)
         search_page = response.read()
         sps = BeautifulSoup(search_page)
         links = sps.findAll('a', href=re.compile("^http"))
         url = ""
-        if(is_torrent.match(links[0]['href'])):
-            if(val in links[0]['href'].lower()):
-                if("swesub" not in links[0]['href'].lower()):
-                    url = links[0]['href']
+        for l in links:
+            if(is_torrent.match(l['href'])):
+                if("swesub" not in l['href'].lower()):
+                    if ep == "-1":
+                        # we are searching for a torrent of an entire season
+                        val = val.replace(" ", "_").lower()
+                        if (val in l['href'].lower() or (val.replace("_","_0") in l['href'].lower())):
+                            url = l['href']
+                            break
+                    else:
+                        # we are searching for an episode
+                        if(val in l['href'].lower() and  "_".join(series_name.split(" ")).lower() in l['href'].lower()):
+                            url = l['href']
+                            break
         return url
 
 class btjunkiesearch:
     def __init__(self):
         self.name = "btjunkie"
     def search(self, series_name, sn, ep, fmask):
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'"])
         is_torrent = re.compile(".*torrent$")
         g = re.compile(r'Good\((.*?)\)', re.DOTALL)
         f = re.compile(r'Fake\((.*?)\)', re.DOTALL) 
         url = ""
         m = fmask()
         val = m.mask(sn, ep)
-        good = 0
-        fake = 0
-        search_url = "http://btjunkie.org/search?q=" + "+".join(series_name.split(" ")).replace("'","") + "+" + val
+        search_url = "http://btjunkie.org/search?q="+"+".join(series_name.split(" ")).replace("'","")+"+"+"+".join(val.split(" "))
         response = urllib2.urlopen(search_url)
         search_page = response.read()
         response.close()
         sps = BeautifulSoup(search_page)
         links = sps.findAll('a', href=re.compile("^http"))
         if links:
-            if(is_torrent.match(links[0]['href'])):
-                if(val in links[0]['href'].lower()):
-                    if("swesub" not in links[0]['href'].lower()):
-                        turl = links[0]['href'].replace("/download.torrent", "").replace("dl.", "")
+            val = val.replace(" ", "-").lower()
+            for l in links:
+                good = 0
+                fake = 0
+                m_found = False
+                if(is_torrent.match(l['href']) and ("swesub" not in l['href'].lower())):
+                    if ep == "-1":
+                        if (val in l['href'].lower() or (val.replace("-","-0") in l['href'].lower())):
+                            m_found = True
+                    else:
+                        if(val in l['href'].lower() and  "-".join(series_name.split(" ")).lower() in l['href'].lower()):
+                            m_found = True
+
+                    if(m_found):
+                        turl = l['href'].replace("/download.torrent", "").replace("dl.", "")
                         resp = urllib2.urlopen(turl)
                         # due to btjunkie having occasional broken/fake torrents, need some additional validation
                         validate_page = resp.read()
@@ -81,10 +115,10 @@ class btjunkiesearch:
                             if bs.string:
                                 if g.match(bs.string):
                                     good = int(g.findall(bs.string)[0])
-                                    l = bs.string.split(" ")
-                                    for v in l:
+                                    li = bs.string.split(" ")
+                                    for v in li:
                                         if f.match(v):
                                             fake = int(f.findall(v)[0])
-                    if(good > fake):
-                        url = links[0]['href']
+                        if(good > fake):
+                            url =l['href']
         return url

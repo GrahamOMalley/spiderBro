@@ -7,13 +7,21 @@
 # using the deluge rpc interface
 #
 #####################################################################################
-
+import socket
+import time
 from sb_utils import *
+
 # globals
 start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
+# dont change db_mask unless you want to delete the db and start over...
 db_mask = sNeN()
-masks_list = [NxN, sNeN]
+# these could be made configurable
+polite_value = 5
+socket.setdefaulttimeout(10)
+e_masks = [NxN, sNeN]
+s_masks = [season, series]
 search_list = [piratebaysearch, btjunkiesearch]
+
 dl_these = []
 
 config = ConfigParser.ConfigParser()
@@ -24,6 +32,10 @@ try:
     use_whole_lib = config.getboolean("options", "scan_all_shows_xbmc")
 except:
     use_whole_lib = False
+try:
+    polite = config.getboolean("options", "polite")
+except:
+    polite = False
 try:
     force_learn = config.getboolean("options", "force_learn")
 except:
@@ -49,12 +61,14 @@ except:
 # parse arg list - this will override anything in the config file that conflicts
 if len(sys.argv) > 1:
     for arg in sys.argv:
+        if(arg == "--learn" or arg == "-l"):
+            force_learn = True
+        if(arg == "--polite" or arg == "-p"):
+            polite = True
         if(arg == "--verbose" or arg == "-v"):
             use_debug_logging = True
         if(arg == "--usexbmc" or arg == "-x"):
             use_whole_lib = True
-        if(arg == "--learn" or arg == "-l"):
-            force_learn = True
         if(arg == "--help" or arg == "-h"):
             print "Usage:"
             print "spiderBro.py"
@@ -97,16 +111,16 @@ log.debug("")
 # If using the shows file, open and get shows list
 shows_list = []
 if(shows_file and not use_whole_lib):
-	try:
-		f = open(shows_file)
-		try:
-			for line in f:
-				shows_list.append(line.replace("\n",""))
-		finally:
-			f.close()
-	except:
-		log.error("Cannot open shows file, exiting")
-		sys.exit()
+    try:
+        f = open(shows_file)
+        try:
+            for line in f:
+                shows_list.append(line.replace("\n",""))
+        finally:
+            f.close()
+    except:
+        log.error("Cannot open shows file, exiting")
+        sys.exit()
 
 # Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably in my case
 ignore_list = []
@@ -127,15 +141,16 @@ def hunt_eps(s):
     ended = False
     log.info("Looking for eps for: %s" % (series_name))
     try:
-		# get the series id from thetvdb.com
+        # get the series id from thetvdb.com
         page = urllib2.urlopen("http://cache.thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
+        if polite: time.sleep(polite_value)
         soup = BeautifulSoup(page)
         series_id = soup.data.series.seriesid.string
-		# now get the info for the series
+        # now get the info for the series
         data = BeautifulSoup(urllib2.urlopen("http://thetvdb.com/data/series/%s/all/" % str(series_id))).data
         if(data.series.status.string == "Ended"):
             ended = True
-		# data structures to keep track of episodes
+        # data structures to keep track of episodes
         aired_list = []
         have_list = []
         highest_season = 1
@@ -143,8 +158,8 @@ def hunt_eps(s):
         # iterate through data, get list of season/episodes for show starting from 1 (0 are specials)
         for i in data.findAll('episode', recursive=False):
             if(i.seasonnumber.string != '0'):
-       	        season = i.seasonnumber.string
-    	        highest_season = max(highest_season, int(i.seasonnumber.string))
+                season = i.seasonnumber.string
+                highest_season = max(highest_season, int(i.seasonnumber.string))
                 ep = i.episodenumber.string
                 try:
                     fa = i.firstaired.string.split('-')
@@ -176,20 +191,39 @@ def hunt_eps(s):
         tmc.execute("""select distinct episode from urls_seen where showname = \"%s\"""" % series_name)
         for cur in tmc:
             s = str(int(cur[0].split('e')[0].replace("s", "")))
-            e = str(int(cur[0].split('e')[1].replace("e", "")))
+            if("-" in cur[0].split('e')[1]):
+                e = "-1"
+            else:
+                e = str(int(cur[0].split('e')[1]))
             have_list.append((s, e))
         tmc.close()
         mysql_con.close()
 
     except ValueError as v:
         log.error("Database error?")
-        print v
+        log.error(str(v))
         sys.exit()
 
+    # TODO: if missing entire season
+    have_s = list(set([h[0] for h in have_list]))
+    aired_s = list(set([a[0] for a in aired_list]))
+    if(ended):
+        seas = [c for c in aired_s if c not in have_s]
+    else:
+        seas = [c for c in aired_s if((c not in have_s) and (int(c) < highest_season))]
+    
+    have_seas = [val for val in have_list if val[1] == "-1"]
     # get the episodes, search torrent sites for episodes
     ep_list = [val for val in aired_list if val not in have_list]
+    for s in seas:
+        ep_list = [c for c in ep_list if c[0] != s]
+        ep_list.append((s, "-1"))
+    for h in have_seas:
+        ep_list = [c for c in ep_list if c[0] != h[0]]
+    #sys.exit()
+
     if ended and not ep_list:
-        log.info("Got all episodes for this, cache in new table")
+        log.info("Got all episodes for this, skipping in future")
         tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
         tmc = tempmysql_con.cursor()
         tmc.execute("""insert into finished_shows (showname) VALUES (\"%s\")""" % (series_name))
@@ -200,10 +234,16 @@ def hunt_eps(s):
         for s, e in ep_list:
             found = False
             val = db_mask.mask(s, e)
+            if(e == "-1"):
+                log.info("Searching for entire season %s of %s" % (s, series_name))
+                masks_list = s_masks
+            else:
+                masks_list = e_masks
             for site_ctor in search_list:
                 if not found:
+                    # if season use season mask list
                     for mk_ctor in masks_list:
-                        #logpoint using mask
+                        if polite: time.sleep(polite_value)
                         mk = mk_ctor()
                         mskinf = mk.mask(s,e)
                         site = site_ctor()
@@ -227,7 +267,7 @@ def hunt_eps(s):
                 ep_season = int(s)
                 if ((ep_season < highest_season) or (force_learn)):
                     log.info("Cannot find torrent for: %s %s - skipping this in future" % (series_name, val))
-                    #cache in db
+                    # insert into db
                     tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
                     tmc = tempmysql_con.cursor()
                     tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"None\")""" % (series_name, val))
@@ -248,7 +288,7 @@ def on_connect_success(result):
     log.info("Connection to deluge was successful, result code: %s" % result)
     # need a callback for when torrent added completes
     def add_tor(key, val):
-	    log.info("Added torrent url to deluge: %s" % (val))
+        log.info("Added torrent url to deluge: %s" % (val))
     
     mysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
     tmc = mysql_con.cursor()
@@ -256,8 +296,8 @@ def on_connect_success(result):
         di = {'download_location':tp['save_dir']}
         df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
         init_list.append(df)
-		#add url to database - ideally would be nice to do this in callback, but dont have info there?
-    	tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"%s\")""" % (tp["showname"],tp["episode"],tp["url"]))
+        #add url to database - ideally would be nice to do this in callback, but dont have info there?
+        tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"%s\")""" % (tp["showname"],tp["episode"],tp["url"]))
     tmc.close()
     log.debug("Init list: %s" % init_list)
     dl = defer.DeferredList(init_list)
@@ -285,15 +325,13 @@ else:
     if(shows_list):
         log.info("Using list of shows from file...")
         for show in shows_list:
-	        hunt_eps(show)
+            hunt_eps(show)
     else:
         log.info("No shows to download, exiting")
         sys.exit()
 
 
 # Connect to a daemon running on the localhost
-# We get a Deferred object from this method and we use this to know if and when
-# the connection succeeded or failed.
 d = client.connect()
 # We add the callback to the Deferred object we got from connect()
 d.addCallback(on_connect_success)
