@@ -24,69 +24,66 @@ search_list = [piratebaysearch, btjunkiesearch]
 
 dl_these = []
 
+# TODO: make the config file/command line parser write to this instead
+opts = {}
+
 config = ConfigParser.ConfigParser()
 config.read("/home/gom/.spiderBro/config.ini")
 
+# TODO: abstract this into function or class
 # Attempt to get values from config file
 try:
-    use_whole_lib = config.getboolean("options", "scan_all_shows_xbmc")
+    opts['use_whole_lib'] = config.getboolean("options", "scan_all_shows_xbmc")
 except:
-    use_whole_lib = False
+    opts['use_whole_lib'] = False
 try:
-    polite = config.getboolean("options", "polite")
+    opts['polite'] = config.getboolean("options", "polite")
 except:
-    polite = False
+    opts['polite'] = False
 try:
-    force_learn = config.getboolean("options", "force_learn")
+    opts['polite_value'] = config.get("options", "polite_value")
 except:
-    force_learn = False
+    opts['polite_value'] = 5
 try:
-    tv_dir = config.get("options", "tv_dir")
+    opts['force_learn'] = config.getboolean("options", "force_learn")
 except:
-    tv_dir = "/media/twoTB1/videos/tv/"
+    opts['force_learn'] = False
 try:
-    shows_file = config.get("options", "shows_file")
+    opts['tv_dir'] = config.get("options", "tv_dir")
 except:
-    shows_file = None
+    opts['tv_dir'] = "/media/twoTB1/videos/tv/"
 try:
-    log_dir = config.get("options", "log_dir")
+    opts['shows_file'] = config.get("options", "shows_file")
 except:
-    log_dir = "/home/gom/log"
+    opts['shows_file'] = None
 try:
-    use_debug_logging = config.getboolean("options", "use_debug_logging")
+    opts['log_dir'] = config.get("options", "log_dir")
 except:
-    use_debug_logging = False
-
+    opts['log_dir'] = "/home/gom/log"
+try:
+    opts['use_debug_logging'] = config.getboolean("options", "use_debug_logging")
+except:
+    opts['use_debug_logging'] = False
 
 # parse arg list - this will override anything in the config file that conflicts
-if len(sys.argv) > 1:
-    for arg in sys.argv:
-        if(arg == "--learn" or arg == "-l"):
-            force_learn = True
-        if(arg == "--polite" or arg == "-p"):
-            polite = True
-        if(arg == "--verbose" or arg == "-v"):
-            use_debug_logging = True
-        if(arg == "--usexbmc" or arg == "-x"):
-            use_whole_lib = True
-        if(arg == "--help" or arg == "-h"):
-            print "Usage:"
-            print "spiderBro.py"
-            print "Options:"
-            print "\t--learn or -l"
-            print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
-            print "\t--polite or -p"
-            print "\t\t forces spiderBro to wait 5 seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
-            print "\t--usexbmc or -x"
-            print "\t\t Uses entire xbmc tv shows library"
-            print "\t--help or -h"
-            print "\t\tPrint help and exit"
-            sys.exit()
+p_opts = get_config(sys.argv)
+print opts
+print ""
+print p_opts
+
+for k, v in p_opts.iteritems():
+    opts[k] = v
+if "force_show" in opts:
+    opts['use_whole_lib'] = False
+print ""
+print opts
+
+# TODO: abstract this to class or function?
 
 # Set up the logger to print out errors
 setupLogger()
 log = logging.getLogger("test.log")
-if (use_debug_logging):
+if (opts['use_debug_logging'] == True):
     log.setLevel(logging.DEBUG)
 else:
     log.setLevel(logging.INFO)
@@ -95,26 +92,30 @@ handler_stream = logging.StreamHandler()
 handler_stream.setFormatter(formatter)
 handler_stream.setLevel(logging.CRITICAL)
 log.addHandler(handler_stream)
-handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (log_dir, start_time))
+handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (opts['log_dir'], start_time))
 handler_file.setFormatter(formatter)
 log.addHandler(handler_file)
 
 log.info("Initiating Automatic Torrent Download [beep boop boop beep]")
 log.debug("")
 log.debug("Using params:")
-log.debug("use_debug_logging: %s " % use_debug_logging)
-log.debug("use_whole_lib: %s " % use_whole_lib)
-log.debug("force_learn: %s " % force_learn)
-log.debug("tv_dir: %s " % tv_dir)
-log.debug("log_dir: %s " % log_dir)
-log.debug("shows_file: %s " % shows_file)
+log.debug("use_debug_logging: %s " % opts['use_debug_logging'])
+log.debug("use_whole_lib: %s " % opts['use_whole_lib'])
+log.debug("polite: %s " % opts['polite'])
+log.debug("polite_value: %s " % opts['polite_value'])
+log.debug("force_learn: %s " % opts ['force_learn'])
+log.debug("opts['tv_dir']: %s " % opts['tv_dir'])
+log.debug("log_dir: %s " % opts['log_dir'])
+log.debug("opts['shows_file']: %s " % opts['shows_file'])
+if "force_show" in opts:
+    log.debug("opts['force_show']: %s " % opts['force_show'])
 log.debug("")
 
 # If using the shows file, open and get shows list
 shows_list = []
-if(shows_file and not use_whole_lib):
+if(('shows_file' in opts and not opts['use_whole_lib']) and 'force_show' not in opts):
     try:
-        f = open(shows_file)
+        f = open(opts['shows_file'])
         try:
             for line in f:
                 shows_list.append(line.replace("\n",""))
@@ -123,6 +124,8 @@ if(shows_file and not use_whole_lib):
     except:
         log.error("Cannot open shows file, exiting")
         sys.exit()
+
+
 
 # Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably
 ignore_list = []
@@ -139,13 +142,14 @@ shows_list = [val for val in shows_list if val not in ignore_list]
 # The function that actually grabs our episodes
 def hunt_eps(s):
     series_name = s
-    dir = tv_dir + series_name.replace(" ", "_").replace("'", "").lower()
+    dir = opts['tv_dir'] + series_name.replace(" ", "_").replace("'", "").lower()
     ended = False
     log.info("Looking for eps for: %s" % (series_name))
+    # TODO: the tvdb scraping could be a function or class instead
     try:
         # get the series id from thetvdb.com
         page = urllib2.urlopen("http://cache.thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
-        if polite: time.sleep(polite_value)
+        if opts['polite']: time.sleep(opts['polite_value'])
         soup = BeautifulSoup(page)
         series_id = soup.data.series.seriesid.string
         # now get the info for the series
@@ -245,7 +249,7 @@ def hunt_eps(s):
                 if not found:
                     # if season use season mask list
                     for mk_ctor in masks_list:
-                        if polite: time.sleep(polite_value)
+                        if opts['polite']: time.sleep(opts['polite_value'])
                         mk = mk_ctor()
                         mskinf = mk.mask(s,e)
                         site = site_ctor()
@@ -267,7 +271,7 @@ def hunt_eps(s):
             if not found:
                 #check episode is not in current season, do not search again if so
                 ep_season = int(s)
-                if ((ep_season < highest_season) or (force_learn)):
+                if ((ep_season < highest_season) or (opts['force_learn'])):
                     log.info("Cannot find torrent for: %s %s - skipping this in future" % (series_name, val))
                     # insert into db
                     tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
@@ -311,7 +315,7 @@ def on_connect_fail(result):
     print "result:", result
     sys.exit()
 
-if(use_whole_lib):
+if(opts['use_whole_lib']):
     log.info("Scanning entire XBMC library, this could take some time...")
     # we get the complete list of shows from xbmc, minus the finished shows (if any)
     mysql_con = MySQLdb.connect (host = "localhost",user = "xbmc",passwd = "xbmc",db = "xbmc_video")
@@ -324,7 +328,9 @@ if(use_whole_lib):
     mysql_con.close()
 
 else:
-    if(shows_list):
+    if('force_show' in opts):
+        hunt_eps(opts['force_show'])
+    elif(shows_list):
         log.info("Using list of shows from file...")
         for show in shows_list:
             hunt_eps(show)

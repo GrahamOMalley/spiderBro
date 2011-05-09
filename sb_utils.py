@@ -1,19 +1,19 @@
 #! /usr/bin/env python
 
-import string
-import urllib2
 from BeautifulSoup import BeautifulSoup
 from datetime import date
 from datetime import datetime
-import MySQLdb
-import re
+from deluge.log import setupLogger
 from deluge.ui.client import client
 from twisted.internet import defer
 from twisted.internet import reactor
-from deluge.log import setupLogger
-import logging
-import sys
 import ConfigParser
+import MySQLdb
+import logging
+import re
+import string
+import sys
+import urllib2
 
 class season:
     def __init__(self):
@@ -122,3 +122,65 @@ class btjunkiesearch:
                         if(good > fake):
                             url =l['href']
         return url
+    
+def get_config(args):
+    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', '-h', '-l', '-p', '-s', '-v', '-x']
+    opts = {}
+    if len(args) > 1:
+        for i in range(len(args)):
+            if args[i] in switches:
+                
+                # --LEARN
+                if(args[i] == "--learn" or args[i] == "-l"):
+                    opts['force_learn'] = True
+                
+                # --USE_DEBUG_LOGGING
+                if(args[i]== "--verbose" or args[i]== "-v"):
+                    opts['use_debug_logging'] = True
+
+                # --USE_XBMC
+                if(args[i]== "--use_xbmc" or args[i]== "-x"):
+                    opts['use_whole_lib'] = True
+
+                # --SHOW
+                if(args[i] == "--show" or args[i] == "-s"):
+                    try:
+                        if(args[i+1] not in switches):
+                            opts['force_show'] = args[i+1]
+                            opts['use_whole_lib'] = False
+                        else:
+                            print "please supply value for show to force"
+                            sys.exit()
+                    except:
+                        print "please supply show to force"
+                        sys.exit()
+                
+                # --POLITE
+                if(args[i] == "--polite" or args[i] == "-p" ):
+                    try:
+                        if(args[i+1] not in switches):
+                            opts['polite_value'] = int(args[i+1])
+                            opts['polite'] = True
+                        else:
+                            print "please supply integer value for polite wait period"
+                            sys.exit()
+                    except:
+                        print "please supply polite param in the form of an integer"
+                        sys.exit()
+                
+                # --HELP
+                if(args[i]== "--help" or args[i]== "-h"):
+                    print "Usage:"
+                    print "spiderBro.py"
+                    print "Options:"
+                    print "\t--learn or -l"
+                    print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
+                    print "\t--polite or -p"
+                    print "\t\t forces spiderBro to wait 5 seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
+                    print "\t--usexbmc or -x"
+                    print "\t\t Uses entire xbmc tv shows library"
+                    print "\t--help or -h"
+                    print "\t\tPrint help and exit"
+                    sys.exit()
+
+    return opts
