@@ -335,12 +335,22 @@ def get_params(args):
                     print "Usage:"
                     print "spiderBro.py"
                     print "Options:"
+                    
                     print "\t--learn or -l"
                     print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
+                    
                     print "\t--polite or -p"
-                    print "\t\t forces spiderBro to wait 5 seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
+                    print "\t\t forces spiderBro to wait n seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
+                    
+                    print "\t--show or -s"
+                    print "\t\t Forces scan of only show X (will add new shows to library if not in current library)"
+
+                    print "\t--verbose or -v"
+                    print "\t\t Turns on debug logging"
+
                     print "\t--usexbmc or -x"
                     print "\t\t Uses entire xbmc tv shows library"
+
                     print "\t--help or -h"
                     print "\t\tPrint help and exit"
                     sys.exit()
