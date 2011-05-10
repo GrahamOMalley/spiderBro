@@ -66,8 +66,7 @@ if(opts['use_whole_lib']):
     mc.execute("""select distinct strTitle from episodeview order by strTitle""")
     for show in mc:
         if(show[0] not in ignore_list):
-            d = hunt_eps(show[0], opts, search_list, s_masks, e_masks, db_mask)
-            if d: dl_these.append(d)
+            hunt_eps(show[0], opts, search_list, s_masks, e_masks, db_mask)
     mc.close()
     mysql_con.close()
 else:
@@ -75,16 +74,14 @@ else:
     # if FORCE_SHOW, get specified show
     #
     if('force_show' in opts):
-        d = hunt_eps(opts['force_show'], opts, search_list, s_masks, e_masks, db_mask)
-        if d: dl_these.append(d)
+        hunt_eps(opts['force_show'], opts, search_list, s_masks, e_masks, db_mask)
     #
     # if SHOWS_LIST, get for list of shows
     #
     elif(shows_list):
         log.info("Using list of shows from file...")
         for show in shows_list:
-            d = hunt_eps(show, opts, search_list, s_masks, e_masks, db_mask)
-            if d: dl_these.append(d)
+            hunt_eps(show, opts, search_list, s_masks, e_masks, db_mask)
     #
     # else EXIT
     #

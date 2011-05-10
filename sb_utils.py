@@ -272,6 +272,7 @@ def get_episode_list(series, o):
         ep_list.append((s, "-1"))
     for h in have_seas:
         ep_list = [c for c in ep_list if c[0] != h[0]]
+
     return ep_list, ended, highest_season
 
 def get_ignore_list():
@@ -398,8 +399,9 @@ def get_shows_from_file(fname):
 def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
     l = logging.getLogger('spiderbro')
     dir = opts['tv_dir'] + series_name.replace(" ", "_").replace("'", "").lower()
+
     ep_list, ended, highest_season = get_episode_list(series_name, opts)
-    # get the episodes, search torrent sites for episodes
+
     if ended and not ep_list:
         l.info("Got all episodes for this, skipping in future")
         tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
@@ -407,7 +409,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
         tmc.execute("""insert into finished_shows (showname) VALUES (\"%s\")""" % (series_name))
         tmc.close()
         tempmysql_con.close()
-        return {}
+        #return {}
     elif ep_list:
         for s, e in ep_list:
             found = False
@@ -434,7 +436,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
                                 dict = {'url':url, "save_dir":dir, 'showname':series_name, "episode":val}
                                 dl_these.append(dict)
                                 found = True
-                                return dict
+                                #return dict
                         except AttributeError as ex:
                             l.error("%s timed out?" % ex)
                         except:
