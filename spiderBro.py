@@ -27,7 +27,7 @@ socket.setdefaulttimeout(10)
 # get our config file and params
 #################################################################################################################
 
-opts = get_configfile("/home/gom/.spiderBro/config.ini")
+opts = get_config_file("/home/gom/.spiderBro/config.ini")
 opts.update(get_params(sys.argv))
 if "force_show" in opts: opts['use_whole_lib'] = False
 
@@ -35,7 +35,7 @@ if "force_show" in opts: opts['use_whole_lib'] = False
 # Set up the logger to print out errors
 #################################################################################################################
 
-log = getSBLog(opts)
+log = get_sb_log(opts)
 
 #################################################################################################################
 # If using the shows file, open and get shows list
@@ -43,13 +43,13 @@ log = getSBLog(opts)
 
 shows_list = []
 if(('shows_file' in opts and not opts['use_whole_lib']) and 'force_show' not in opts):
-    shows_list = getshowsfromfile(opts['shows_file'])
+    shows_list = get_shows_from_file(opts['shows_file'])
 
 #################################################################################################################
 # Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably
 #################################################################################################################
 
-ignore_list = getignorelist()
+ignore_list = get_ignore_list()
 shows_list = [val for val in shows_list if val not in ignore_list]
 
 #################################################################################################################
@@ -70,7 +70,6 @@ if(opts['use_whole_lib']):
             if d: dl_these.append(d)
     mc.close()
     mysql_con.close()
-
 else:
     #
     # if FORCE_SHOW, get specified show

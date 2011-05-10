@@ -18,6 +18,10 @@ import urllib2
 # nasty global
 dl_these = []
 
+#####################################################################################
+# Filemasks
+#####################################################################################
+
 class season:
     def __init__(self):
         self.descr = "season"
@@ -45,6 +49,10 @@ class NxN:
         e = "0" + ep if(int(ep)<10) else "e" + ep
         return ("%sx%s" % (sn, e))
        
+#####################################################################################
+# Searches
+#####################################################################################
+
 class piratebaysearch:
     def __init__(self):
         self.name = "piratebay"
@@ -125,71 +133,23 @@ class btjunkiesearch:
                         if(good > fake):
                             url =l['href']
         return url
-    
-def get_params(args):
-    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', '-h', '-l', '-p', '-s', '-v', '-x']
-    opts = {}
-    if len(args) > 1:
-        for i in range(len(args)):
-            if args[i] in switches:
-                
-                # --LEARN
-                if(args[i] == "--learn" or args[i] == "-l"):
-                    opts['force_learn'] = True
-                
-                # --USE_DEBUG_LOGGING
-                if(args[i]== "--verbose" or args[i]== "-v"):
-                    opts['use_debug_logging'] = True
 
-                # --USE_XBMC
-                if(args[i]== "--use_xbmc" or args[i]== "-x"):
-                    opts['use_whole_lib'] = True
+#####################################################################################
+# Deferred callback function for clean exit
+#####################################################################################
 
-                # --SHOW
-                if(args[i] == "--show" or args[i] == "-s"):
-                    try:
-                        if(args[i+1] not in switches):
-                            opts['force_show'] = args[i+1]
-                            opts['use_whole_lib'] = False
-                        else:
-                            print "please supply value for show to force"
-                            sys.exit()
-                    except:
-                        print "please supply show to force"
-                        sys.exit()
-                
-                # --POLITE
-                if(args[i] == "--polite" or args[i] == "-p" ):
-                    try:
-                        if(args[i+1] not in switches):
-                            opts['polite_value'] = int(args[i+1])
-                            opts['polite'] = True
-                        else:
-                            print "please supply integer value for polite wait period"
-                            sys.exit()
-                    except:
-                        print "please supply polite param in the form of an integer"
-                        sys.exit()
-                
-                # --HELP
-                if(args[i]== "--help" or args[i]== "-h"):
-                    print "Usage:"
-                    print "spiderBro.py"
-                    print "Options:"
-                    print "\t--learn or -l"
-                    print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
-                    print "\t--polite or -p"
-                    print "\t\t forces spiderBro to wait 5 seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
-                    print "\t--usexbmc or -x"
-                    print "\t\t Uses entire xbmc tv shows library"
-                    print "\t--help or -h"
-                    print "\t\tPrint help and exit"
-                    sys.exit()
+def dl_finish(result):
+    l = logging.getLogger('spiderbro')
+    l.info("All deferred calls have fired, exiting program...")
+    client.disconnect()
+    # Stop the twisted main loop and exit
+    reactor.stop()
 
-    return opts
+#####################################################################################
+# Functions to retrieve configs, episodelists etc
+#####################################################################################
 
-
-def get_configfile(filename):
+def get_config_file(filename):
     opts = {}
     config = ConfigParser.ConfigParser()
     config.read(filename)
@@ -229,62 +189,7 @@ def get_configfile(filename):
         opts['use_debug_logging'] = False
     return opts
 
-def logdebuginfo(o):
-    l = logging.getLogger("spiderbro")
-    l.debug("")
-    l.debug("Using params:")
-    sopts = o.keys()
-    sopts.sort()
-    for k in sopts:
-        l.debug("%s: %s" % (k, o[k]))
-    l.debug("")
-
-def getSBLog(o):
-    start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
-    setupLogger()
-    l = logging.getLogger("spiderbro")
-    if (o['use_debug_logging'] == True):
-        l.setLevel(logging.DEBUG)
-    else:
-        l.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
-    handler_stream = logging.StreamHandler()
-    handler_stream.setFormatter(formatter)
-    handler_stream.setLevel(logging.CRITICAL)
-    l.addHandler(handler_stream)
-    handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o['log_dir'], start_time))
-    handler_file.setFormatter(formatter)
-    l.addHandler(handler_file)
-    l.info("Initiating Automatic Torrent Download [beep boop boop beep]")
-    logdebuginfo(o)
-    return l
-
-def getshowsfromfile(fname):
-    try:
-        slist = []
-        f = open(fname)
-        try:
-            for line in f:
-                slist.append(line.replace("\n",""))
-        finally:
-            f.close()
-            return slist
-    except:
-        log.error("Cannot open shows file, exiting")
-        sys.exit()
-
-def getignorelist():
-    ig_l = []
-    tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
-    tmc = tempmysql_con.cursor()
-    tmc.execute("""select distinct * from finished_shows""")
-    for show in tmc:
-        ig_l.append(show[0])
-    tmc.close()
-    tempmysql_con.close()
-    return ig_l
-
-def getepisodelist(series, o):
+def get_episode_list(series, o):
     aired_list = []
     have_list = []
     highest_season = 1
@@ -369,6 +274,113 @@ def getepisodelist(series, o):
         ep_list = [c for c in ep_list if c[0] != h[0]]
     return ep_list, ended, highest_season
 
+def get_ignore_list():
+    ig_l = []
+    tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
+    tmc = tempmysql_con.cursor()
+    tmc.execute("""select distinct * from finished_shows""")
+    for show in tmc:
+        ig_l.append(show[0])
+    tmc.close()
+    tempmysql_con.close()
+    return ig_l
+ 
+def get_params(args):
+    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', '-h', '-l', '-p', '-s', '-v', '-x']
+    opts = {}
+    if len(args) > 1:
+        for i in range(len(args)):
+            if args[i] in switches:
+                
+                # --LEARN
+                if(args[i] == "--learn" or args[i] == "-l"):
+                    opts['force_learn'] = True
+                
+                # --USE_DEBUG_LOGGING
+                if(args[i]== "--verbose" or args[i]== "-v"):
+                    opts['use_debug_logging'] = True
+
+                # --USE_XBMC
+                if(args[i]== "--use_xbmc" or args[i]== "-x"):
+                    opts['use_whole_lib'] = True
+
+                # --SHOW
+                if(args[i] == "--show" or args[i] == "-s"):
+                    try:
+                        if(args[i+1] not in switches):
+                            opts['force_show'] = args[i+1]
+                            opts['use_whole_lib'] = False
+                        else:
+                            print "please supply value for show to force"
+                            sys.exit()
+                    except:
+                        print "please supply show to force"
+                        sys.exit()
+                
+                # --POLITE
+                if(args[i] == "--polite" or args[i] == "-p" ):
+                    try:
+                        if(args[i+1] not in switches):
+                            opts['polite_value'] = int(args[i+1])
+                            opts['polite'] = True
+                        else:
+                            print "please supply integer value for polite wait period"
+                            sys.exit()
+                    except:
+                        print "please supply polite param in the form of an integer"
+                        sys.exit()
+                
+                # --HELP
+                if(args[i]== "--help" or args[i]== "-h"):
+                    print "Usage:"
+                    print "spiderBro.py"
+                    print "Options:"
+                    print "\t--learn or -l"
+                    print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
+                    print "\t--polite or -p"
+                    print "\t\t forces spiderBro to wait 5 seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
+                    print "\t--usexbmc or -x"
+                    print "\t\t Uses entire xbmc tv shows library"
+                    print "\t--help or -h"
+                    print "\t\tPrint help and exit"
+                    sys.exit()
+
+    return opts
+
+def get_sb_log(o):
+    start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
+    setupLogger()
+    l = logging.getLogger("spiderbro")
+    if (o['use_debug_logging'] == True):
+        l.setLevel(logging.DEBUG)
+    else:
+        l.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
+    handler_stream = logging.StreamHandler()
+    handler_stream.setFormatter(formatter)
+    handler_stream.setLevel(logging.CRITICAL)
+    l.addHandler(handler_stream)
+    handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o['log_dir'], start_time))
+    handler_file.setFormatter(formatter)
+    l.addHandler(handler_file)
+    l.info("Initiating Automatic Torrent Download [beep boop boop beep]")
+    log_debug_info(o)
+    return l
+
+def get_shows_from_file(fname):
+    try:
+        slist = []
+        f = open(fname)
+        try:
+            for line in f:
+                slist.append(line.replace("\n",""))
+        finally:
+            f.close()
+            return slist
+    except:
+        log.error("Cannot open shows file, exiting")
+        sys.exit()
+
 #####################################################################################
 # The function that actually grabs our episodes
 #####################################################################################
@@ -376,7 +388,7 @@ def getepisodelist(series, o):
 def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
     l = logging.getLogger('spiderbro')
     dir = opts['tv_dir'] + series_name.replace(" ", "_").replace("'", "").lower()
-    ep_list, ended, highest_season = getepisodelist(series_name, opts)
+    ep_list, ended, highest_season = get_episode_list(series_name, opts)
     # get the episodes, search torrent sites for episodes
     if ended and not ep_list:
         l.info("Got all episodes for this, skipping in future")
@@ -431,25 +443,34 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
                     tempmysql_con.close()
             l.info("")
 
-# We create another callback function to be called when an error is encountered
+#####################################################################################
+# Print out some nice debugging info
+#####################################################################################
+
+def log_debug_info(o):
+    l = logging.getLogger("spiderbro")
+    l.debug("")
+    l.debug("Using params:")
+    sopts = o.keys()
+    sopts.sort()
+    for k in sopts:
+        l.debug("%s: %s" % (k, o[k]))
+    l.debug("")
+
+#####################################################################################
+# Deferred callback function to be called when an error is encountered
+#####################################################################################
+
 def on_connect_fail(result):
     l = logging.getLogger('spiderbro')
     l.info("Connection failed!")
     l.info("result: %s" % result)
     sys.exit()
-#####################################################################################
-# deferred for clean exit
-#####################################################################################
-def dlfinish(result):
-    l = logging.getLogger('spiderbro')
-    l.info("All deferred calls have fired, exiting program...")
-    client.disconnect()
-    # Stop the twisted main loop and exit
-    reactor.stop()
 
 #####################################################################################
-# def deluge client callbacks here
+# Deferred callback function called when we connect
 #####################################################################################
+
 def on_connect_success(result):
     l = logging.getLogger('spiderbro')
     init_list = []
@@ -468,5 +489,5 @@ def on_connect_success(result):
         tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"%s\")""" % (tp["showname"],tp["episode"],tp["url"]))
     tmc.close()
     dl = defer.DeferredList(init_list)
-    dl.addCallback(dlfinish)
+    dl.addCallback(dl_finish)
 
