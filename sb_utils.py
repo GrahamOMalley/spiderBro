@@ -58,7 +58,8 @@ class piratebaysearch:
         self.name = "piratebay"
     def search(self, series_name, sn, ep, fmask):
         is_torrent = re.compile(".*torrent$")
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'"])
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
+        series_name = series_name.replace("&", "and")
         m = fmask()
         val = m.mask(sn, ep)
         #piratebay torrents use _ as a delimiter
@@ -88,7 +89,8 @@ class btjunkiesearch:
     def __init__(self):
         self.name = "btjunkie"
     def search(self, series_name, sn, ep, fmask):
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'"])
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
+        series_name = series_name.replace("&", "and")
         is_torrent = re.compile(".*torrent$")
         g = re.compile(r'Good\((.*?)\)', re.DOTALL)
         f = re.compile(r'Fake\((.*?)\)', re.DOTALL) 
