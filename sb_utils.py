@@ -7,10 +7,9 @@ from deluge.ui.client import client
 from twisted.internet import defer
 from twisted.internet import reactor
 import ConfigParser
-import MySQLdb
+from db_manager import *
 import logging
 import re
-import string
 import sys
 import time
 import urllib2
@@ -58,7 +57,7 @@ class piratebaysearch:
         self.name = "piratebay"
     def search(self, series_name, sn, ep, fmask):
         is_torrent = re.compile(".*torrent$")
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
         series_name = series_name.replace("&", "and")
         m = fmask()
         val = m.mask(sn, ep)
@@ -89,7 +88,7 @@ class btjunkiesearch:
     def __init__(self):
         self.name = "btjunkie"
     def search(self, series_name, sn, ep, fmask):
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
         series_name = series_name.replace("&", "and")
         is_torrent = re.compile(".*torrent$")
         g = re.compile(r'Good\((.*?)\)', re.DOTALL)
@@ -189,7 +188,51 @@ def get_config_file(filename):
         opts['use_debug_logging'] = config.getboolean("options", "use_debug_logging")
     except:
         opts['use_debug_logging'] = False
+    try:
+        opts['use_mysql'] = config.getboolean("options", "use_mysql")
+    except:
+        opts['use_mysql'] = False
+    try:
+        opts['host'] = config.get("options", "host")
+    except:
+        opts['host'] = None
+    try:
+        opts['user'] = config.get("options", "user")
+    except:
+        opts['user'] = None
+    try:
+        opts['passw'] = config.get("options", "passw")
+    except:
+        opts['passw'] = None
+    try:
+        opts['schema'] = config.get("options", "schema")
+    except:
+        opts['schema'] = None
+    try:
+        opts['xbmc_sqlite_db'] = config.get("options", "xbmc_sqlite_db")
+    except:
+        opts['xbmc_sqlite_db'] = "test.db"
+    
     return opts
+
+def get_series_id(series_name):
+    l = logging.getLogger("spiderbro")
+    d = db_manager()
+    tup = d.get_show_info(series_name)
+    if tup:
+        sid = tup[0][0]
+        l.debug("Got series ID from db: %s" % sid)
+        return sid
+    else:
+        try:
+            page = urllib2.urlopen("http://cache.thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
+            soup = BeautifulSoup(page)
+            sid = int(soup.data.series.seriesid.string)
+            l.debug("Got series ID from tvdb: %s" % sid)
+            d.add_show(sid, series_name, 0)
+            return sid
+        except Exception, e:
+            l.error("A WILD ERROR APPEARS! %s" % e)
 
 def get_episode_list(series, o):
     aired_list = []
@@ -197,19 +240,18 @@ def get_episode_list(series, o):
     highest_season = 1
     ended = False
     series_name = series
+    d = db_manager()
     l = logging.getLogger("spiderbro")
     l.info("Looking for eps for: %s" % (series_name))
     try:
-        # get the series id from thetvdb.com
-        page = urllib2.urlopen("http://cache.thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
-        if o['polite']: time.sleep(o['polite_value'])
-        soup = BeautifulSoup(page)
-        series_id = soup.data.series.seriesid.string
+
+        # get the series id from db or web
+        series_id = get_series_id(series)
+
         # now get the info for the series
         data = BeautifulSoup(urllib2.urlopen("http://thetvdb.com/data/series/%s/all/" % str(series_id))).data
         if(data.series.status.string == "Ended"):
             ended = True
-        # data structures to keep track of episodes
 
         # iterate through data, get list of season/episodes for show starting from 1 (0 are specials)
         for i in data.findAll('episode', recursive=False):
@@ -229,31 +271,16 @@ def get_episode_list(series, o):
         l.error("\tCould not get episode list from thetvdb (timeout?)")
         l.error("")
         return [], False, highest_season
-    # use the mysql lib to access xbmc db, cross check episode lists
-    try:
-        mysql_con = MySQLdb.connect (host = "localhost",user = "xbmc",passwd = "xbmc",db = "xbmc_video")
-        mc = mysql_con.cursor()
-        # SELECT season number, episode number from show
-        mc.execute("""select c12,c13 from episodeview where strtitle = \"%s\"""" % series_name)
-        for cur in mc:
-            have_list.append((str(cur[0]), str(cur[1])))
 
-        mc.close()
-        mysql_con.close()
+    try:
+        # use the mysql lib to access xbmc db, cross check episode lists
+        l = d.xbmc_get_eps_for_show(series_name)
+        for i in l: have_list.append(i)
 
         # create new db con to torrents db, populate from here aswell
-        mysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
-        tmc = mysql_con.cursor()
-        tmc.execute("""select distinct episode from urls_seen where showname = \"%s\"""" % series_name)
-        for cur in tmc:
-            s = str(int(cur[0].split('e')[0].replace("s", "")))
-            if("-" in cur[0].split('e')[1]):
-                e = "-1"
-            else:
-                e = str(int(cur[0].split('e')[1]))
-            have_list.append((s, e))
-        tmc.close()
-        mysql_con.close()
+        l = d.get_eps_from_self(series_name)
+        for s, e in l: have_list.append((str(s), str(e)))
+
 
     except ValueError as v:
         l.error("Database error?")
@@ -277,19 +304,9 @@ def get_episode_list(series, o):
 
     return ep_list, ended, highest_season
 
-def get_ignore_list():
-    ig_l = []
-    tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
-    tmc = tempmysql_con.cursor()
-    tmc.execute("""select distinct * from finished_shows""")
-    for show in tmc:
-        ig_l.append(show[0])
-    tmc.close()
-    tempmysql_con.close()
-    return ig_l
- 
 def get_params(args):
-    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', '-h', '-l', '-p', '-s', '-v', '-x']
+    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', "--force-id", 
+                '-h', '-l', '-p', '-s', '-v', '-x', "-id"]
     opts = {}
     if len(args) > 1:
         for i in range(len(args)):
@@ -319,7 +336,18 @@ def get_params(args):
                     except:
                         print "please supply show to force"
                         sys.exit()
-                
+                # --FORCE-ID 
+                if(args[i] == "--force-id" or args[i] == "-id"):
+                    try:
+                        if(args[i+1] not in switches):
+                            opts['force_id'] = args[i+1]
+                        else:
+                            print "please supply value for id to force"
+                            sys.exit()
+                    except:
+                        print "please supply value for id to force"
+                        sys.exit()
+
                 # --POLITE
                 if(args[i] == "--polite" or args[i] == "-p" ):
                     try:
@@ -377,10 +405,13 @@ def get_sb_log(o):
     handler_file.setFormatter(formatter)
     l.addHandler(handler_file)
     l.info("Initiating Automatic Torrent Download [beep boop boop beep]")
+    #l.info("SpiderBro, SpiderBro")
+    #l.info("Finding episodes for your shows")
     log_debug_info(o)
     return l
 
 def get_shows_from_file(fname):
+    l = logging.getLogger('spiderbro')
     try:
         slist = []
         f = open(fname)
@@ -391,31 +422,27 @@ def get_shows_from_file(fname):
             f.close()
             return slist
     except:
-        log.error("Cannot open shows file, exiting")
+        l.error("Cannot open shows file, exiting")
         sys.exit()
 
 #####################################################################################
 # The function that actually grabs our episodes
 #####################################################################################
 
-def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
+def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
     l = logging.getLogger('spiderbro')
+    d = db_manager()
     dir = opts['tv_dir'] + series_name.replace(" ", "_").replace("'", "").lower()
+
 
     ep_list, ended, highest_season = get_episode_list(series_name, opts)
 
     if ended and not ep_list:
-        l.info("Got all episodes for this, skipping in future")
-        tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
-        tmc = tempmysql_con.cursor()
-        tmc.execute("""insert into finished_shows (showname) VALUES (\"%s\")""" % (series_name))
-        tmc.close()
-        tempmysql_con.close()
-        #return {}
+        l.info("\tGot all episodes for this, skipping in future")
+        d.mark_show_finished(series_name)
     elif ep_list:
         for s, e in ep_list:
             found = False
-            val = db_mask.mask(s, e)
             if(e == "-1"):
                 l.info("Searching for entire season %s of %s" % (s, series_name))
                 masks_list = s_masks
@@ -434,11 +461,9 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
                             url = site.search(series_name, s, e, mk_ctor)
                             if url:
                                 l.info("\tFound torrent: %s" % url)
-                                val = db_mask.mask(s, e)
-                                dict = {'url':url, "save_dir":dir, 'showname':series_name, "episode":val}
+                                dict = {'url':url, "save_dir":dir, 'showname':series_name, "season":s, "episode":e}
                                 dl_these.append(dict)
                                 found = True
-                                #return dict
                         except AttributeError as ex:
                             l.error("%s timed out?" % ex)
                         except:
@@ -447,14 +472,9 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, db_mask):
             if not found:
                 #check episode is not in current season, do not search again if so
                 ep_season = int(s)
-                if ((ep_season < highest_season) or (opts['force_learn'])):
-                    l.info("Cannot find torrent for: %s %s - skipping this in future" % (series_name, val))
-                    # insert into db
-                    tempmysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
-                    tmc = tempmysql_con.cursor()
-                    tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"None\")""" % (series_name, val))
-                    tmc.close()
-                    tempmysql_con.close()
+                if ((ep_season < highest_season) or (opts['force_learn']) or ended):
+                    l.info("Cannot find torrent for: %s season %s episode %s - skipping this in future" % (series_name, s, e))
+                    d.add_to_urls_seen(series_name, s, e, "None")
             l.info("")
 
 #####################################################################################
@@ -486,6 +506,7 @@ def on_connect_fail(result):
 #####################################################################################
 
 def on_connect_success(result):
+    d = db_manager()
     l = logging.getLogger('spiderbro')
     init_list = []
     l.info("Connection to deluge was successful, result code: %s" % result)
@@ -493,15 +514,25 @@ def on_connect_success(result):
     def add_tor(key, val):
         l.info("Added torrent url to deluge: %s" % (val))
     
-    mysql_con = MySQLdb.connect (host = "localhost",user = "torrents",passwd = "torrents",db = "torrents")
-    tmc = mysql_con.cursor()
+    # need a way around this nasty global variable
     for tp in dl_these:
         di = {'download_location':tp['save_dir']}
         df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
         init_list.append(df)
         #add url to database - ideally would be nice to do this in callback, but dont have info there?
-        tmc.execute("""insert into urls_seen (showname,episode,url) VALUES (\"%s\",\"%s\",\"%s\")""" % (tp["showname"],tp["episode"],tp["url"]))
-    tmc.close()
+        d.add_to_urls_seen(tp['showname'], tp['season'], tp['episode'], tp['url'])
+
     dl = defer.DeferredList(init_list)
     dl.addCallback(dl_finish)
+
+
+def setup_db_manager(opts):
+    d = db_manager()
+
+    d.init_sb_db('spiderbro.db')
+
+    if(opts["use_mysql"]):
+        d.xbmc_init_mysql(opts["host"], opts["user"], opts["passw"], opts["schema"])
+    else:
+        d.xbmc_init_sqlite(opts["xbmc_sqlite_db"])
 

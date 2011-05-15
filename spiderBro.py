@@ -27,7 +27,7 @@ socket.setdefaulttimeout(10)
 # get our config file and params
 #################################################################################################################
 
-opts = get_config_file("/home/gom/.spiderBro/config.ini")
+opts = get_config_file("config.ini")
 opts.update(get_params(sys.argv))
 if "force_show" in opts: opts['use_whole_lib'] = False
 
@@ -36,6 +36,18 @@ if "force_show" in opts: opts['use_whole_lib'] = False
 #################################################################################################################
 
 log = get_sb_log(opts)
+
+#################################################################################################################
+# Set up DB_manager
+#################################################################################################################
+
+setup_db_manager(opts)
+db = db_manager()
+
+# force database items from params
+if('force_id' in opts and 'force_show' in opts):
+    log.debug("Forcing new id %s for show %s" % (opts['force_id'], opts['force_show']))
+    db.update_series_id(opts['force_show'], opts['force_id'])
 
 #################################################################################################################
 # If using the shows file, open and get shows list
@@ -49,9 +61,8 @@ if(('shows_file' in opts and not opts['use_whole_lib']) and 'force_show' not in 
 # Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably
 #################################################################################################################
 
-ignore_list = get_ignore_list()
+ignore_list = db.get_ignore_list()
 shows_list = [val for val in shows_list if val not in ignore_list]
-
 #################################################################################################################
 # Main
 #################################################################################################################
@@ -61,27 +72,25 @@ if(opts['use_whole_lib']):
     # if USE_WHOLE_LIB, we get the complete list of shows from xbmc, minus the finished shows (if any)
     #
     log.info("Scanning entire XBMC library, this could take some time...")
-    mysql_con = MySQLdb.connect (host = "localhost",user = "xbmc",passwd = "xbmc",db = "xbmc_video")
-    mc = mysql_con.cursor()
-    mc.execute("""select distinct strTitle from episodeview order by strTitle""")
-    for show in mc:
+
+    full_showlist = db.xbmc_get_showlist()
+    for show in full_showlist:
         if(show[0] not in ignore_list):
-            hunt_eps(show[0], opts, search_list, s_masks, e_masks, db_mask)
-    mc.close()
-    mysql_con.close()
+            hunt_eps(show[0], opts, search_list, s_masks, e_masks)
+
 else:
     #
     # if FORCE_SHOW, get specified show
     #
     if('force_show' in opts):
-        hunt_eps(opts['force_show'], opts, search_list, s_masks, e_masks, db_mask)
+        hunt_eps(opts['force_show'], opts, search_list, s_masks, e_masks)
     #
     # if SHOWS_LIST, get for list of shows
     #
     elif(shows_list):
         log.info("Using list of shows from file...")
         for show in shows_list:
-            hunt_eps(show, opts, search_list, s_masks, e_masks, db_mask)
+            hunt_eps(show, opts, search_list, s_masks, e_masks)
     #
     # else EXIT
     #
