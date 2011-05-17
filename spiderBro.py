@@ -18,8 +18,6 @@ from sb_utils import *
 e_masks = [NxN, sNeN]
 s_masks = [season, series]
 search_list = [piratebaysearch, btjunkiesearch]
-# dont change db_mask after using spiderbro for the first time, it'll mess up thesurls_seen table
-db_mask = sNeN()
 # these could be made configurable
 socket.setdefaulttimeout(10)
 
@@ -27,7 +25,7 @@ socket.setdefaulttimeout(10)
 # get our config file and params
 #################################################################################################################
 
-opts = get_config_file("config.ini")
+opts = get_config_file("/home/gom/.spiderBro/config.ini")
 opts.update(get_params(sys.argv))
 if "force_show" in opts: opts['use_whole_lib'] = False
 

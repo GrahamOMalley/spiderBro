@@ -157,6 +157,10 @@ def get_config_file(filename):
     
     # Attempt to get values from config file
     try:
+        opts['sb_db_file'] = config.get("options", "sb_db_file")
+    except:
+        opts['sb_db_file'] = 'spiderbro.db'
+    try:
         opts['use_whole_lib'] = config.getboolean("options", "scan_all_shows_xbmc")
     except:
         opts['use_whole_lib'] = False
@@ -404,9 +408,9 @@ def get_sb_log(o):
     handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o['log_dir'], start_time))
     handler_file.setFormatter(formatter)
     l.addHandler(handler_file)
-    l.info("Initiating Automatic Torrent Download [beep boop boop beep]")
-    #l.info("SpiderBro, SpiderBro")
-    #l.info("Finding episodes for your shows")
+    #l.info("Initiating Automatic Torrent Download [beep boop boop beep]")
+    l.info("SpiderBro, SpiderBro")
+    l.info("Finding episodes for your shows")
     log_debug_info(o)
     return l
 
@@ -529,7 +533,10 @@ def on_connect_success(result):
 def setup_db_manager(opts):
     d = db_manager()
 
-    d.init_sb_db('spiderbro.db')
+    if("sb_db_file" in opts):
+        d.init_sb_db(opts['sb_db_file'])
+    else:
+        d.init_sb_db('spiderbro.db')
 
     if(opts["use_mysql"]):
         d.xbmc_init_mysql(opts["host"], opts["user"], opts["passw"], opts["schema"])

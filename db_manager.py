@@ -63,7 +63,7 @@ class db_manager:
                     con.execute(stat)
                     con.commit()
                     con.close()
-                    self.log.debug("DATABASE Executed query: %s" % stat)
+                    self.log.debug("\tDATABASE: %s" % stat)
                 else:
                     self.log.error("Cannot execute, sb_db not initialized")
             except Exception, e:
@@ -73,7 +73,7 @@ class db_manager:
         def sb_select(self, cols, tname, whereclause=""):
             list = []
             statement = "select " + ", ".join(cols) + " from " + tname + whereclause
-            self.log.debug("DATABASE Executed query %s" % statement)
+            self.log.debug("\tDATABASE: %s" % statement)
             if self.SB_DB_INITIALIZED:
                 conn = sqlite3.connect(self.sb_db_file)
                 cur = conn.cursor()
@@ -148,7 +148,7 @@ class db_manager:
                     list.append(c)
                 cur.close()
                 con.close()
-                self.log.debug("DATABASE Executed Query: %s" % query)
+                self.log.debug("\tDATABASE: %s" % query)
                 return list
                     
             except Exception, e:
