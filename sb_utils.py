@@ -56,38 +56,46 @@ class piratebaysearch:
     def __init__(self):
         self.name = "piratebay"
     def search(self, series_name, sn, ep, fmask):
+        lg = logging.getLogger('spiderbro')
         is_torrent = re.compile(".*torrent$")
         series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
         series_name = series_name.replace("&", "and")
         m = fmask()
         val = m.mask(sn, ep)
-        #piratebay torrents use _ as a delimiter
-        search_url = "http://thepiratebay.org/search/"+"+".join(series_name.split(" ")).replace("'","")+"+"+"+".join(val.split(" ")) + "/0/7/0"
-        response = urllib2.urlopen(search_url)
-        search_page = response.read()
-        sps = BeautifulSoup(search_page)
-        links = sps.findAll('a', href=re.compile("^http"))
+
+        # split off the series name
+        ser_list = get_seriesname_list(series_name)
         url = ""
-        for l in links:
-            if(is_torrent.match(l['href'])):
-                if("swesub" not in l['href'].lower()):
-                    if ep == "-1":
-                        # we are searching for a torrent of an entire season
-                        val = val.replace(" ", "_").lower()
-                        if (val in l['href'].lower() or (val.replace("_","_0") in l['href'].lower())):
-                            url = l['href']
-                            break
-                    else:
-                        # we are searching for an episode
-                        if(val in l['href'].lower() and  "_".join(series_name.split(" ")).lower() in l['href'].lower()):
-                            url = l['href']
-                            break
+        for series_search_term in ser_list:
+            if url == "":
+                #piratebay torrents use _ as a delimiter
+                search_url = "http://thepiratebay.org/search/"+"+".join(series_search_term.split(" ")).replace("'","")+"+"+"+".join(val.split(" ")) + "/0/7/0"
+                lg.info("\t\t%s" % search_url)
+                response = urllib2.urlopen(search_url)
+                search_page = response.read()
+                sps = BeautifulSoup(search_page)
+                links = sps.findAll('a', href=re.compile("^http"))
+                for l in links:
+                    if(is_torrent.match(l['href'])):
+                        if("swesub" not in l['href'].lower()):
+                            if ep == "-1":
+                                # we are searching for a torrent of an entire season
+                                val = val.replace(" ", "_").lower()
+                                if (val in l['href'].lower() or (val.replace("_","_0") in l['href'].lower())):
+                                    url = l['href']
+                                    break
+                            else:
+                                # we are searching for an episode
+                                if(val in l['href'].lower() and  "_".join(series_search_term.split(" ")).lower() in l['href'].lower()):
+                                    url = l['href']
+                                    break
         return url
 
 class btjunkiesearch:
     def __init__(self):
         self.name = "btjunkie"
     def search(self, series_name, sn, ep, fmask):
+        lg = logging.getLogger('spiderbro')
         series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
         series_name = series_name.replace("&", "and")
         is_torrent = re.compile(".*torrent$")
@@ -96,44 +104,61 @@ class btjunkiesearch:
         url = ""
         m = fmask()
         val = m.mask(sn, ep)
-        search_url = "http://btjunkie.org/search?q="+"+".join(series_name.split(" ")).replace("'","")+"+"+"+".join(val.split(" "))
-        response = urllib2.urlopen(search_url)
-        search_page = response.read()
-        response.close()
-        sps = BeautifulSoup(search_page)
-        links = sps.findAll('a', href=re.compile("^http"))
-        if links:
-            val = val.replace(" ", "-").lower()
-            for l in links:
-                good = 0
-                fake = 0
-                m_found = False
-                if(is_torrent.match(l['href']) and ("swesub" not in l['href'].lower())):
-                    if ep == "-1":
-                        if (val in l['href'].lower() or (val.replace("-","-0") in l['href'].lower())):
-                            m_found = True
-                    else:
-                        if(val in l['href'].lower() and  "-".join(series_name.split(" ")).lower() in l['href'].lower()):
-                            m_found = True
-
-                    if(m_found):
-                        turl = l['href'].replace("/download.torrent", "").replace("dl.", "")
-                        resp = urllib2.urlopen(turl)
-                        # due to btjunkie having occasional broken/fake torrents, need some additional validation
-                        validate_page = resp.read()
-                        val_tags = BeautifulSoup(validate_page)
-                        b = val_tags.findAll('b')
-                        for bs in b:
-                            if bs.string:
-                                if g.match(bs.string):
-                                    good = int(g.findall(bs.string)[0])
-                                    li = bs.string.split(" ")
-                                    for v in li:
-                                        if f.match(v):
-                                            fake = int(f.findall(v)[0])
-                        if(good > fake):
-                            url =l['href']
+        ser_list = get_seriesname_list(series_name)
+        url = ""
+        for series_search_term in ser_list:
+            if url == "":
+                search_url = "http://btjunkie.org/search?q="+"+".join(series_search_term.split(" ")).replace("'","")+"+"+"+".join(val.split(" "))
+                lg.info("\t\t%s" % search_url)
+                response = urllib2.urlopen(search_url)
+                search_page = response.read()
+                response.close()
+                sps = BeautifulSoup(search_page)
+                links = sps.findAll('a', href=re.compile("^http"))
+                if links:
+                    val = val.replace(" ", "-").lower()
+                    for l in links:
+                        good = 0
+                        fake = 0
+                        m_found = False
+                        if(is_torrent.match(l['href']) and ("swesub" not in l['href'].lower())):
+                            if ep == "-1":
+                                if (val in l['href'].lower() or (val.replace("-","-0") in l['href'].lower())):
+                                    m_found = True
+                            else:
+                                if(val in l['href'].lower() and  "-".join(series_search_term.split(" ")).lower() in l['href'].lower()):
+                                    m_found = True
+        
+                            if(m_found):
+                                turl = l['href'].replace("/download.torrent", "").replace("dl.", "")
+                                resp = urllib2.urlopen(turl)
+                                # due to btjunkie having occasional broken/fake torrents, need some additional validation
+                                validate_page = resp.read()
+                                val_tags = BeautifulSoup(validate_page)
+                                b = val_tags.findAll('b')
+                                for bs in b:
+                                    if bs.string:
+                                        if g.match(bs.string):
+                                            good = int(g.findall(bs.string)[0])
+                                            li = bs.string.split(" ")
+                                            for v in li:
+                                                if f.match(v):
+                                                    fake = int(f.findall(v)[0])
+                                if(good > fake):
+                                    url =l['href']
         return url
+
+
+#####################################################################################
+# split something like "Archer (2009)" into ["Archer (2009)", "Archer"]
+# can be extended later to include more search patterns
+#####################################################################################
+
+def get_seriesname_list(str):
+    regser = re.compile(" \([0-9a-zA-Z]{2,4}\)").sub('', str)
+    li = [str, regser]
+    return list(set(li))
+
 
 #####################################################################################
 # Deferred callback function for clean exit
@@ -222,6 +247,9 @@ def get_config_file(filename):
 def get_series_id(series_name):
     l = logging.getLogger("spiderbro")
     d = db_manager()
+
+    # TODO: try and get series id from xbmc db first if force_id not true?
+
     tup = d.get_show_info(series_name)
     if tup:
         sid = tup[0][0]
@@ -438,15 +466,17 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
     d = db_manager()
     dir = opts['tv_dir'] + series_name.replace(" ", "_").replace("'", "").lower()
 
-
     ep_list, ended, highest_season = get_episode_list(series_name, opts)
 
     if ended and not ep_list:
         l.info("\tGot all episodes for this, skipping in future")
         d.mark_show_finished(series_name)
     elif ep_list:
+        # search for sX eX using every search site and every filemask until torrent is found
         for s, e in ep_list:
+            # TODO: new list could be for-looped thru here
             found = False
+            # if searching for full season season use season mask list
             if(e == "-1"):
                 l.info("Searching for entire season %s of %s" % (s, series_name))
                 masks_list = s_masks
@@ -454,7 +484,6 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
                 masks_list = e_masks
             for site_ctor in search_list:
                 if not found:
-                    # if season use season mask list
                     for mk_ctor in masks_list:
                         if opts['polite']: time.sleep(opts['polite_value'])
                         mk = mk_ctor()
@@ -470,9 +499,8 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
                                 found = True
                         except AttributeError as ex:
                             l.error("%s timed out?" % ex)
-                        except:
-                            print "Unexpected error:", sys.exc_info()[0]
-                            l.error("%s timed out?" % site.name)
+                        except Exception, e:
+                            l.error("A WILD ERROR APPEARS! %s" % e)
             if not found:
                 #check episode is not in current season, do not search again if so
                 ep_season = int(s)
@@ -482,7 +510,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
             l.info("")
 
 #####################################################################################
-# Print out some nice debugging info
+# Print out some debugging info about params
 #####################################################################################
 
 def log_debug_info(o):
@@ -518,7 +546,7 @@ def on_connect_success(result):
     def add_tor(key, val):
         l.info("Added torrent url to deluge: %s" % (val))
     
-    # need a way around this nasty global variable
+    # TODO: get rid of this nasty global variable
     for tp in dl_these:
         di = {'download_location':tp['save_dir']}
         df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
