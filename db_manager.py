@@ -161,6 +161,9 @@ class db_manager:
         def xbmc_get_showlist(self):
             return self.xbmc_select("""select distinct strTitle from episodeview order by strTitle""")
 
+        def xbmc_get_series_id(self, sname):
+            return self.xbmc_select("""select distinct c12 from tvshow where c00 = \"%s\"""" %sname)
+
         def get_id(self):
             """ Test method, return singleton id """
             return id(self)

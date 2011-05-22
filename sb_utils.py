@@ -70,7 +70,7 @@ class piratebaysearch:
             if url == "":
                 #piratebay torrents use _ as a delimiter
                 search_url = "http://thepiratebay.org/search/"+"+".join(series_search_term.split(" ")).replace("'","")+"+"+"+".join(val.split(" ")) + "/0/7/0"
-                lg.info("\t\t%s" % search_url)
+                lg.info("\tSearching Piratebay:\t%s %s \t(%s)" % (series_search_term, val, search_url))
                 response = urllib2.urlopen(search_url)
                 search_page = response.read()
                 sps = BeautifulSoup(search_page)
@@ -109,7 +109,7 @@ class btjunkiesearch:
         for series_search_term in ser_list:
             if url == "":
                 search_url = "http://btjunkie.org/search?q="+"+".join(series_search_term.split(" ")).replace("'","")+"+"+"+".join(val.split(" "))
-                lg.info("\t\t%s" % search_url)
+                lg.info("\tSearching BtJunkie:\t%s %s \t(%s)" % (series_search_term, val, search_url))
                 response = urllib2.urlopen(search_url)
                 search_page = response.read()
                 response.close()
@@ -244,27 +244,31 @@ def get_config_file(filename):
     
     return opts
 
-def get_series_id(series_name):
+def get_series_id(series_name, op):
     l = logging.getLogger("spiderbro")
     d = db_manager()
 
-    # TODO: try and get series id from xbmc db first if force_id not true?
+    # try and get series id from xbmc db first if force_id not true?
+    res = d.xbmc_get_series_id(series_name)
+    if(res and not ('force_id' in op)):
+        l.debug("\t\tGot series ID from XBMC: %s" % res[0][0])
+        return res[0][0]
 
     tup = d.get_show_info(series_name)
     if tup:
         sid = tup[0][0]
-        l.debug("Got series ID from db: %s" % sid)
+        l.debug("\t\tGot series ID from Spiderbro Internal DB: %s" % sid)
         return sid
     else:
         try:
-            page = urllib2.urlopen("http://cache.thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
+            page = urllib2.urlopen("http://thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
             soup = BeautifulSoup(page)
             sid = int(soup.data.series.seriesid.string)
-            l.debug("Got series ID from tvdb: %s" % sid)
+            l.debug("\t\tGot series ID from tvdb: %s" % sid)
             d.add_show(sid, series_name, 0)
             return sid
         except Exception, e:
-            l.error("A WILD ERROR APPEARS! %s" % e)
+            l.error("Error retrieving series id: %s" % e)
 
 def get_episode_list(series, o):
     aired_list = []
@@ -278,7 +282,7 @@ def get_episode_list(series, o):
     try:
 
         # get the series id from db or web
-        series_id = get_series_id(series)
+        series_id = get_series_id(series, o)
 
         # now get the info for the series
         data = BeautifulSoup(urllib2.urlopen("http://thetvdb.com/data/series/%s/all/" % str(series_id))).data
@@ -486,14 +490,11 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
                 if not found:
                     for mk_ctor in masks_list:
                         if opts['polite']: time.sleep(opts['polite_value'])
-                        mk = mk_ctor()
-                        mskinf = mk.mask(s,e)
                         site = site_ctor()
-                        l.info("\tSearching %s using mask %s" % (site.name, mskinf))
                         try:
                             url = site.search(series_name, s, e, mk_ctor)
                             if url:
-                                l.info("\tFound torrent: %s" % url)
+                                l.info("\t\tFound torrent: %s" % url)
                                 dict = {'url':url, "save_dir":dir, 'showname':series_name, "season":s, "episode":e}
                                 dl_these.append(dict)
                                 found = True
