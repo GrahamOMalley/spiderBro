@@ -57,12 +57,13 @@ class piratebaysearch:
         self.name = "piratebay"
     def search(self, series_name, sn, ep, fmask):
         lg = logging.getLogger('spiderbro')
+        db = db_manager()
+        is_high_q = db.get_show_high_quality(series_name)
         is_torrent = re.compile(".*torrent$")
         series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
         series_name = series_name.replace("&", "and")
         m = fmask()
         val = m.mask(sn, ep)
-
         # split off the series name
         ser_list = get_seriesname_list(series_name)
         url = ""
@@ -77,6 +78,13 @@ class piratebaysearch:
                 links = sps.findAll('a', href=re.compile("^http"))
                 for l in links:
                     if(is_torrent.match(l['href'])):
+                        # TODO: implement break if high_quality = 1 and 720p not in l['href'] or if high_quality = 0 and 720p in l['href']
+                        if(is_high_q and "720p" not in l['href']):
+                            #lg.debug("Torrent skipped, HQ=True but torrent is not 720p: %s" % l['href'])
+                            continue
+                        if((not is_high_q) and "720p" in l['href']):
+                            #lg.debug("Torrent skipped, HQ=False but torrent is 720p: %s" % l['href'])
+                            continue
                         if("swesub" not in l['href'].lower()):
                             if ep == "-1":
                                 # we are searching for a torrent of an entire season
@@ -96,6 +104,8 @@ class btjunkiesearch:
         self.name = "btjunkie"
     def search(self, series_name, sn, ep, fmask):
         lg = logging.getLogger('spiderbro')
+        db = db_manager()
+        is_high_q = db.get_show_high_quality(series_name)
         series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
         series_name = series_name.replace("&", "and")
         is_torrent = re.compile(".*torrent$")
@@ -122,6 +132,13 @@ class btjunkiesearch:
                         fake = 0
                         m_found = False
                         if(is_torrent.match(l['href']) and ("swesub" not in l['href'].lower())):
+                            # TODO: implement break if high_quality = 1 and 720p not in l['href'] or if high_quality = 0 and 720p in l['href']
+                            if(is_high_q and "720p" not in l['href']):
+                                #lg.debug("Torrent skipped, HQ=True but torrent is not 720p: %s" % l['href'])
+                                continue
+                            if((not is_high_q) and "720p" in l['href']):
+                                #lg.debug("Torrent skipped, HQ=False but torrent is 720p: %s" % l['href'])
+                                continue
                             if ep == "-1":
                                 if (val in l['href'].lower() or (val.replace("-","-0") in l['href'].lower())):
                                     m_found = True
@@ -170,6 +187,31 @@ def dl_finish(result):
     client.disconnect()
     # Stop the twisted main loop and exit
     reactor.stop()
+
+#################################################################################################################
+# force database items from params
+#################################################################################################################
+
+def db_do_opts(opts):
+    lg = logging.getLogger('spiderbro')
+    db = db_manager()
+
+    if('clear_cache' in opts and 'force_show' in opts):
+        lg.info("Clearing db cache for show %s" % (opts['force_show']))
+        db.clear_cache(opts['force_show'])
+    
+    if('high_quality' in opts and 'force_show' in opts):
+        lg.info("Changing quality to high for show %s" % (opts['force_show']))
+        db.set_quality(opts['force_show'], 1)
+    
+    if('low_quality' in opts and 'force_show' in opts):
+        lg.info("Changing quality to low for show %s" % (opts['force_show']))
+        db.set_quality(opts['force_show'], 0)
+    
+    if('force_id' in opts and 'force_show' in opts):
+        lg.info("Forcing new id %s for show %s" % (opts['force_id'], opts['force_show']))
+        db.update_series_id(opts['force_show'], opts['force_id'])
+    
 
 #####################################################################################
 # Functions to retrieve configs, episodelists etc
@@ -341,12 +383,24 @@ def get_episode_list(series, o):
     return ep_list, ended, highest_season
 
 def get_params(args):
-    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', "--force-id", 
-                '-h', '-l', '-p', '-s', '-v', '-x', "-id"]
+    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', "--force-id", "--high-quality", "--low-quality", "--clear-cache",
+                '-h', '-l', '-p', '-s', '-v', '-x', "-id", "-hq", "-lq", "-cc"]
     opts = {}
     if len(args) > 1:
         for i in range(len(args)):
             if args[i] in switches:
+                
+                # --CLEAR-CACHE
+                if(args[i] == "--clear-cache" or args[i] == "-cc"):
+                    opts['clear_cache'] = True
+                
+                # --HQ
+                if(args[i] == "--high-quality" or args[i] == "-hq"):
+                    opts['high_quality'] = True
+                
+                # --LQ
+                if(args[i] == "--low-quality" or args[i] == "-lq"):
+                    opts['low_quality'] = True
                 
                 # --LEARN
                 if(args[i] == "--learn" or args[i] == "-l"):
@@ -372,6 +426,7 @@ def get_params(args):
                     except:
                         print "please supply show to force"
                         sys.exit()
+                
                 # --FORCE-ID 
                 if(args[i] == "--force-id" or args[i] == "-id"):
                     try:

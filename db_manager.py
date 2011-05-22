@@ -35,7 +35,7 @@ class db_manager:
             if self.CREATE_SB_SCHEMA:
                 conn = sqlite3.connect(self.sb_db_file)
                 self.log.debug('Internal db does not exist, Creating Schema...')
-                conn.execute("""create table if not exists shows (series_id INT PRIMARY KEY, showname TEXT unique, finished INT)""")
+                conn.execute("""create table if not exists shows (series_id INT PRIMARY KEY, showname TEXT unique, finished INT default 0, is_anime INT default 0, high_quality INT default 0)""")
                 conn.execute("""create table if not exists urls_seen (showname TEXT, season INT, episode INT, url TEXT)""")
                 conn.close()
             else:
@@ -89,6 +89,12 @@ class db_manager:
         def get_show_info(self, sname):
             return self.sb_select(["series_id", "finished"], "shows", " where showname = \"%s\"" % sname)
 
+        def get_show_high_quality(self, sname):
+            res = self.sb_select(["high_quality"], "shows", " where showname = \"%s\"" % sname)
+            is_hq = False
+            if res[0][0] == 1: is_hq = True
+            return is_hq
+
         def get_ignore_list(self):
             list = self.sb_select(["showname"], "shows", " where finished = 1")
             ret_list = []
@@ -108,6 +114,12 @@ class db_manager:
 
         def add_to_urls_seen(self, sname, s, e, url):
             self.sb_db_set("""insert into urls_seen (showname,season,episode,url) VALUES (\"%s\",\"%s\",\"%s\",\"%s\")""" % (sname,s,e,url))
+
+        def clear_cache(self, sname):
+            self.sb_db_set("""delete from urls_seen where showname=\"%s\"""" % (sname))
+
+        def set_quality(self, sname, qual):
+            self.sb_db_set("""update shows set high_quality=%d where showname = \"%s\" """ % (qual, sname))
 
         def update_series_id(self, sname, id):
             self.sb_db_set("""insert or replace into shows (series_id, showname) values (\"%s\", \"%s\") """ % (id, sname))

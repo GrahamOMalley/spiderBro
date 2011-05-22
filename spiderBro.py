@@ -42,10 +42,7 @@ log = get_sb_log(opts)
 setup_db_manager(opts)
 db = db_manager()
 
-# force database items from params
-if('force_id' in opts and 'force_show' in opts):
-    log.debug("Forcing new id %s for show %s" % (opts['force_id'], opts['force_show']))
-    db.update_series_id(opts['force_show'], opts['force_id'])
+db_do_opts(opts)
 
 #################################################################################################################
 # If using the shows file, open and get shows list
