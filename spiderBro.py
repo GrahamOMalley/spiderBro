@@ -15,7 +15,7 @@ from sb_utils import *
 # globals
 #################################################################################################################
 
-e_masks = [NxN, sNeN]
+e_masks = [NxN, sNeN, NNN]
 s_masks = [season, series]
 search_list = [piratebaysearch, btjunkiesearch]
 # these could be made configurable

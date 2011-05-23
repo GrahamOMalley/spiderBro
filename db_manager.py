@@ -102,7 +102,6 @@ class db_manager:
                 ret_list.append(i[0])
             return ret_list
 
-
         def get_eps_from_self(self, sname):
             return self.sb_select(["season", "episode"], "urls_seen", " where showname = \"%s\"" % sname)
 

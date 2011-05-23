@@ -45,8 +45,15 @@ class NxN:
     def __init__(self):
         self.descr = "NxN"
     def mask(self, sn, ep):
-        e = "0" + ep if(int(ep)<10) else "e" + ep
+        e = "0" + ep if(int(ep)<10) else ep
         return ("%sx%s" % (sn, e))
+       
+class NNN:
+    def __init__(self):
+        self.descr = "NNN"
+    def mask(self, sn, ep):
+        e = "0" + ep if(int(ep)<10) else ep
+        return ("%s%s" % (sn, e))
        
 #####################################################################################
 # Searches
@@ -78,13 +85,14 @@ class piratebaysearch:
                 links = sps.findAll('a', href=re.compile("^http"))
                 for l in links:
                     if(is_torrent.match(l['href'])):
-                        # TODO: implement break if high_quality = 1 and 720p not in l['href'] or if high_quality = 0 and 720p in l['href']
+                        # break if high_quality = 1 and 720p not in l['href'] or if high_quality = 0 and 720p in l['href']
                         if(is_high_q and "720p" not in l['href']):
                             #lg.debug("Torrent skipped, HQ=True but torrent is not 720p: %s" % l['href'])
                             continue
                         if((not is_high_q) and "720p" in l['href']):
                             #lg.debug("Torrent skipped, HQ=False but torrent is 720p: %s" % l['href'])
                             continue
+                        # check other illegal tags here TODO: implement a proper tag list
                         if("swesub" not in l['href'].lower()):
                             if ep == "-1":
                                 # we are searching for a torrent of an entire season
@@ -533,7 +541,6 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
     elif ep_list:
         # search for sX eX using every search site and every filemask until torrent is found
         for s, e in ep_list:
-            # TODO: new list could be for-looped thru here
             found = False
             # if searching for full season season use season mask list
             if(e == "-1"):
@@ -553,6 +560,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
                                 dict = {'url':url, "save_dir":dir, 'showname':series_name, "season":s, "episode":e}
                                 dl_these.append(dict)
                                 found = True
+                                break
                         except AttributeError as ex:
                             l.error("%s timed out?" % ex)
                         except Exception, e:
