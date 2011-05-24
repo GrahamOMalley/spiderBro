@@ -297,18 +297,26 @@ def get_config_file(filename):
 def get_series_id(series_name, op):
     l = logging.getLogger("spiderbro")
     d = db_manager()
+    
+    xbmc_id = d.xbmc_get_series_id(series_name)
+    sb_id = d.get_show_info(series_name)
 
-    # try and get series id from xbmc db first if force_id not true?
-    res = d.xbmc_get_series_id(series_name)
-    if(res and not ('force_id' in op)):
-        l.debug("\t\tGot series ID from XBMC: %s" % res[0][0])
-        return res[0][0]
+    # Edge case can happen here where show in xbmc but not in sb_db, so we make sure it is inserted
+    if(xbmc_id and not sb_id):
+        l.debug("No db entry found for show %s, creating default..." % series_name)
+        d.add_show(xbmc_id[0][0], series_name, 0)
 
-    tup = d.get_show_info(series_name)
-    if tup:
-        sid = tup[0][0]
+    # try and get series id from xbmc db first if force_id not true
+    if(xbmc_id and not ('force_id' in op)):
+        l.debug("\t\tGot series ID from XBMC: %s" % xbmc_id[0][0])
+        return xbmc_id[0][0]
+
+    # otherwise go to sb_db
+    if sb_id:
+        sid = sb_id[0][0]
         l.debug("\t\tGot series ID from Spiderbro Internal DB: %s" % sid)
         return sid
+    # finally go to tvdb if all other options exhausted
     else:
         try:
             page = urllib2.urlopen("http://thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
@@ -564,7 +572,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
                         except AttributeError as ex:
                             l.error("%s timed out?" % ex)
                         except Exception, e:
-                            l.error("A WILD ERROR APPEARS! %s" % e)
+                            l.error("Error: %s" % e)
             if not found:
                 #check episode is not in current season, do not search again if so
                 ep_season = int(s)
