@@ -53,11 +53,12 @@ if(('shows_file' in opts and not opts['use_whole_lib']) and 'force_show' not in 
     shows_list = get_shows_from_file(opts['shows_file'])
 
 #################################################################################################################
-# Get the list of shows that are complete so we can safely ignore them, speeds up whole library scan considerably
+# Get the list of shows that are complete so we can safely ignore them
 #################################################################################################################
 
 ignore_list = db.get_ignore_list()
 shows_list = [val for val in shows_list if val not in ignore_list]
+
 #################################################################################################################
 # Main
 #################################################################################################################

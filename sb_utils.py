@@ -59,6 +59,8 @@ class NNN:
 # Searches
 #####################################################################################
 
+# TODO: define a base class search, with "search", "validate" etc methods, let piratebay etc derive from this
+
 class piratebaysearch:
     def __init__(self):
         self.name = "piratebay"
@@ -67,7 +69,7 @@ class piratebaysearch:
         db = db_manager()
         is_high_q = db.get_show_high_quality(series_name)
         is_torrent = re.compile(".*torrent$")
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
         series_name = series_name.replace("&", "and")
         m = fmask()
         val = m.mask(sn, ep)
@@ -76,7 +78,7 @@ class piratebaysearch:
         url = ""
         for series_search_term in ser_list:
             if url == "":
-                #piratebay torrents use _ as a delimiter
+                #piratebay torrents use _ as a delimiter, the /0/7/0 part sorts by most seeders
                 search_url = "http://thepiratebay.org/search/"+"+".join(series_search_term.split(" ")).replace("'","")+"+"+"+".join(val.split(" ")) + "/0/7/0"
                 lg.info("\tSearching Piratebay:\t%s %s \t(%s)" % (series_search_term, val, search_url))
                 response = urllib2.urlopen(search_url)
@@ -114,7 +116,7 @@ class btjunkiesearch:
         lg = logging.getLogger('spiderbro')
         db = db_manager()
         is_high_q = db.get_show_high_quality(series_name)
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "-"])
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
         series_name = series_name.replace("&", "and")
         is_torrent = re.compile(".*torrent$")
         g = re.compile(r'Good\((.*?)\)', re.DOTALL)
@@ -181,7 +183,8 @@ class btjunkiesearch:
 
 def get_seriesname_list(str):
     regser = re.compile(" \([0-9a-zA-Z]{2,4}\)").sub('', str)
-    li = [str, regser]
+    hyphen = " ".join(str.split("-"))
+    li = [str, regser, hyphen]
     return list(set(li))
 
 
