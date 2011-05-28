@@ -17,6 +17,7 @@ from sb_utils import *
 
 e_masks = [NxN, sNeN, NNN]
 s_masks = [season, series]
+ignore_taglist = ["SWESUB", "SPANISH", "GERMAN"]
 search_list = [piratebaysearch, btjunkiesearch]
 # these could be made configurable
 socket.setdefaulttimeout(10)
@@ -72,21 +73,21 @@ if(opts['use_whole_lib']):
     full_showlist = db.xbmc_get_showlist()
     for show in full_showlist:
         if(show[0] not in ignore_list):
-            hunt_eps(show[0], opts, search_list, s_masks, e_masks)
+            hunt_eps(show[0], opts, search_list, s_masks, e_masks, ignore_taglist)
 
 else:
     #
     # if FORCE_SHOW, get specified show
     #
     if('force_show' in opts):
-        hunt_eps(opts['force_show'], opts, search_list, s_masks, e_masks)
+        hunt_eps(opts['force_show'], opts, search_list, s_masks, e_masks, ignore_taglist)
     #
     # if SHOWS_LIST, get for list of shows
     #
     elif(shows_list):
         log.info("Using list of shows from file...")
         for show in shows_list:
-            hunt_eps(show, opts, search_list, s_masks, e_masks)
+            hunt_eps(show, opts, search_list, s_masks, e_masks, ignore_taglist)
     #
     # else EXIT
     #

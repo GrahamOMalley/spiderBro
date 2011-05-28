@@ -13,6 +13,7 @@ import re
 import sys
 import time
 import urllib2
+import pdb
 
 # nasty global
 dl_these = []
@@ -60,120 +61,146 @@ class NNN:
 #####################################################################################
 
 # TODO: define a base class search, with "search", "validate" etc methods, let piratebay etc derive from this
+class base_search:
+    def __init__(self):
+        self.name = "Base Search Class"
+        self.delimiter = " "
 
-class piratebaysearch:
+    def search(self, series_name, sn, ep, fmask, tags, is_high_qual):
+        lg = logging.getLogger('spiderbro')
+        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
+        series_name = series_name.replace("&", "and")
+        m = fmask()
+        season_or_ep_str = m.mask(sn, ep)
+        ser_list = self.generate_search_terms(series_name)
+        is_season = False
+        if ep == "-1": is_season = True
+        for series_search_term in ser_list:
+            search_url = self.get_search_url(series_search_term, season_or_ep_str)
+            lg.info("\tSearching %s:\t%s %s \t\t(%s)" % (self.name, series_search_term, season_or_ep_str, search_url))
+            try:
+                response = urllib2.urlopen(search_url)
+                search_page = response.read()
+            except:
+                print "Couldn't open %s" % search_url
+                return ""
+            sps = BeautifulSoup(search_page)
+            links = sps.findAll('a', href=re.compile("^http"))
+            for l in links:
+                if self.validate_link(series_search_term, season_or_ep_str, l['href'], tags, is_high_qual, is_season):
+                    if self.validate_page(l['href']):
+                        return l['href']
+        return ""
+
+    def validate_link(self, series, s_ep_str, link, tags, is_high_q, is_season):
+        lg = logging.getLogger('spiderbro')
+        lg.debug('\t\tValidating %s' % (link))
+        # First validate the link title is ok
+        is_torrent = re.compile(".*torrent$")
+        if( (not is_torrent.match(link)) or (is_high_q and "720p" not in link) or ((not is_high_q) and "720p" in link)):
+            return False
+
+        for t in tags:
+            if t.lower() in link.lower(): return False
+        
+        if is_season: 
+            # we are searching for a linkrent of an entire season
+            s_ep_str = s_ep_str.replace(" ", self.delimiter).lower()
+            if (s_ep_str in link.lower() or (s_ep_str.replace(self.delimiter, self.delimiter+"0") in link.lower())):
+                return True
+        else:
+            # we are searching for an episode
+            if (s_ep_str in link.lower() and  self.delimiter.join(series.split(" ")).lower() in link.lower()):
+                return True
+        
+        return False
+
+    def validate_page(self, tor):
+        return True
+
+    def generate_search_terms(self, name):
+        li = [name]
+        regser = re.compile(" \([0-9a-zA-Z]{2,4}\)").sub('', name)
+        hli =[]
+        for l in li:
+            hyphen = " ".join(l.split("-"))
+            hli.append(hyphen)
+        if hli: li.extend(hli)
+        return list(set(li))
+    
+    def get_search_url(self, name, maskval):
+        return "www.thisisabaseclassyouidiot.com"
+
+
+class piratebaysearch(base_search):
     def __init__(self):
         self.name = "piratebay"
-    def search(self, series_name, sn, ep, fmask):
+        self.delimiter = "_"
+    
+    def get_search_url(self, name, maskval):
+        return "http://thepiratebay.org/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
+    
+    def validate_page(self, tor):
+        seeds = 0
+        seeds_reg = re.compile("Seeders:</dt>\n<dd>[0-9]{1,9}")
         lg = logging.getLogger('spiderbro')
-        db = db_manager()
-        is_high_q = db.get_show_high_quality(series_name)
-        is_torrent = re.compile(".*torrent$")
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
-        series_name = series_name.replace("&", "and")
-        m = fmask()
-        val = m.mask(sn, ep)
-        # split off the series name
-        ser_list = get_seriesname_list(series_name)
-        url = ""
-        for series_search_term in ser_list:
-            if url == "":
-                #piratebay torrents use _ as a delimiter, the /0/7/0 part sorts by most seeders
-                search_url = "http://thepiratebay.org/search/"+"+".join(series_search_term.split(" ")).replace("'","")+"+"+"+".join(val.split(" ")) + "/0/7/0"
-                lg.info("\tSearching Piratebay:\t%s %s \t(%s)" % (series_search_term, val, search_url))
-                response = urllib2.urlopen(search_url)
-                search_page = response.read()
-                sps = BeautifulSoup(search_page)
-                links = sps.findAll('a', href=re.compile("^http"))
-                for l in links:
-                    if(is_torrent.match(l['href'])):
-                        # break if high_quality = 1 and 720p not in l['href'] or if high_quality = 0 and 720p in l['href']
-                        if(is_high_q and "720p" not in l['href']):
-                            #lg.debug("Torrent skipped, HQ=True but torrent is not 720p: %s" % l['href'])
-                            continue
-                        if((not is_high_q) and "720p" in l['href']):
-                            #lg.debug("Torrent skipped, HQ=False but torrent is 720p: %s" % l['href'])
-                            continue
-                        # check other illegal tags here TODO: implement a proper tag list
-                        if("swesub" not in l['href'].lower()):
-                            if ep == "-1":
-                                # we are searching for a torrent of an entire season
-                                val = val.replace(" ", "_").lower()
-                                if (val in l['href'].lower() or (val.replace("_","_0") in l['href'].lower())):
-                                    url = l['href']
-                                    break
-                            else:
-                                # we are searching for an episode
-                                if(val in l['href'].lower() and  "_".join(series_search_term.split(" ")).lower() in l['href'].lower()):
-                                    url = l['href']
-                                    break
-        return url
+        lg.debug("\t\tDoing piratebay page validation")
+        turl = tor.replace("http://torrents.thepiratebay.org", "http://thepiratebay.org/torrent")
+        resp = urllib2.urlopen(turl)
+        html = resp.read()
+        data = BeautifulSoup(html)
+        details = data.findAll("dl", { "class" : "col2" })
+        # This is ugly as sin, I think beautifulsoup has some problems with <dt> and <dd> tags?
+        for d in details: seeds = int(seeds_reg.findall(str(d))[0].replace("Seeders:</dt>\n<dd>", ""))
+        if seeds > 0:
+            lg.debug("\t\tValidation passed, torrent has %s seeds..." % seeds)
+            return True
+        else:
+            lg.debug("\t\tValidation FAILED, torrent has no seeds...")
+        return False
 
-class btjunkiesearch:
+class btjunkiesearch(base_search):
     def __init__(self):
         self.name = "btjunkie"
-    def search(self, series_name, sn, ep, fmask):
+        self.delimiter = "-"
+    
+    def get_search_url(self, name, maskval):
+        return "http://btjunkie.org/search?q="+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" "))
+
+    def validate_page(self, tor):
         lg = logging.getLogger('spiderbro')
-        db = db_manager()
-        is_high_q = db.get_show_high_quality(series_name)
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
-        series_name = series_name.replace("&", "and")
-        is_torrent = re.compile(".*torrent$")
+        lg.debug("\t\tDoing btjunkie page validation")
         g = re.compile(r'Good\((.*?)\)', re.DOTALL)
         f = re.compile(r'Fake\((.*?)\)', re.DOTALL) 
-        url = ""
-        m = fmask()
-        val = m.mask(sn, ep)
-        ser_list = get_seriesname_list(series_name)
-        url = ""
-        for series_search_term in ser_list:
-            if url == "":
-                search_url = "http://btjunkie.org/search?q="+"+".join(series_search_term.split(" ")).replace("'","")+"+"+"+".join(val.split(" "))
-                lg.info("\tSearching BtJunkie:\t%s %s \t(%s)" % (series_search_term, val, search_url))
-                response = urllib2.urlopen(search_url)
-                search_page = response.read()
-                response.close()
-                sps = BeautifulSoup(search_page)
-                links = sps.findAll('a', href=re.compile("^http"))
-                if links:
-                    val = val.replace(" ", "-").lower()
-                    for l in links:
-                        good = 0
-                        fake = 0
-                        m_found = False
-                        if(is_torrent.match(l['href']) and ("swesub" not in l['href'].lower())):
-                            # TODO: implement break if high_quality = 1 and 720p not in l['href'] or if high_quality = 0 and 720p in l['href']
-                            if(is_high_q and "720p" not in l['href']):
-                                #lg.debug("Torrent skipped, HQ=True but torrent is not 720p: %s" % l['href'])
-                                continue
-                            if((not is_high_q) and "720p" in l['href']):
-                                #lg.debug("Torrent skipped, HQ=False but torrent is 720p: %s" % l['href'])
-                                continue
-                            if ep == "-1":
-                                if (val in l['href'].lower() or (val.replace("-","-0") in l['href'].lower())):
-                                    m_found = True
-                            else:
-                                if(val in l['href'].lower() and  "-".join(series_search_term.split(" ")).lower() in l['href'].lower()):
-                                    m_found = True
+        good = 0
+        fake = 0
+        turl = tor.replace("/download.torrent", "").replace("dl.", "")
+        resp = urllib2.urlopen(turl)
         
-                            if(m_found):
-                                turl = l['href'].replace("/download.torrent", "").replace("dl.", "")
-                                resp = urllib2.urlopen(turl)
-                                # due to btjunkie having occasional broken/fake torrents, need some additional validation
-                                validate_page = resp.read()
-                                val_tags = BeautifulSoup(validate_page)
-                                b = val_tags.findAll('b')
-                                for bs in b:
-                                    if bs.string:
-                                        if g.match(bs.string):
-                                            good = int(g.findall(bs.string)[0])
-                                            li = bs.string.split(" ")
-                                            for v in li:
-                                                if f.match(v):
-                                                    fake = int(f.findall(v)[0])
-                                if(good > fake):
-                                    url =l['href']
-        return url
+        val_page = resp.read()
+        val_tags = BeautifulSoup(val_page)
+
+        # first check if btjunkie verified image is present
+        im = val_tags.findAll('img')
+        for i in im:
+            if(i['src'] == "http://static.btjunkie.org/images/verified_check1.gif"):
+                lg.debug("\t\tValidated (validation check image is present)")
+                return True
+
+        b = val_tags.findAll('b')
+        for bs in b:
+            if bs.string:
+                if g.match(bs.string):
+                    good = int(g.findall(bs.string)[0])
+                    li = bs.string.split(" ")
+                    for v in li:
+                        if f.match(v):
+                            fake = int(f.findall(v)[0])
+        if(good > fake):
+            return True
+        else:
+            lg.debug("\t\tValidation FAILED: good <= fake (good: %s fake: %s)" % (good, fake))
+            return False
 
 
 #####################################################################################
@@ -309,7 +336,7 @@ def get_series_id(series_name, op):
         l.debug("No db entry found for show %s, creating default..." % series_name)
         d.add_show(xbmc_id[0][0], series_name, 0)
 
-    # try and get series id from xbmc db first if force_id not true
+    # try and get series id from xbmc db first if force_id not True
     if(xbmc_id and not ('force_id' in op)):
         l.debug("\t\tGot series ID from XBMC: %s" % xbmc_id[0][0])
         return xbmc_id[0][0]
@@ -539,10 +566,11 @@ def get_shows_from_file(fname):
 # The function that actually grabs our episodes
 #####################################################################################
 
-def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
+def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
     l = logging.getLogger('spiderbro')
     d = db_manager()
     dir = opts['tv_dir'] + series_name.replace(" ", "_").replace("'", "").lower()
+    is_high_quality = d.get_show_high_quality(series_name)
 
     ep_list, ended, highest_season = get_episode_list(series_name, opts)
 
@@ -565,7 +593,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks):
                         if opts['polite']: time.sleep(opts['polite_value'])
                         site = site_ctor()
                         try:
-                            url = site.search(series_name, s, e, mk_ctor)
+                            url = site.search(series_name, s, e, mk_ctor, ignore_tags, is_high_quality)
                             if url:
                                 l.info("\t\tFound torrent: %s" % url)
                                 dict = {'url':url, "save_dir":dir, 'showname':series_name, "season":s, "episode":e}

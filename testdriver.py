@@ -1,29 +1,22 @@
 #! /usr/bin/env python
-
 from sb_utils import *
+if __name__ == "__main__":
+	
+    e_masks = [NxN, sNeN, NNN]
+    s_masks = [season, series]
+    search_list = [piratebaysearch, btjunkiesearch]
+    tags = ["SWESUB", "SPANISH"]
+    opts = {"use_debug_logging":True, "log_dir":"log"}
 
-ep_matches = [sNeN, NxN]
-sn_matches = [season, series]
-sites = [piratebaysearch, btjunkiesearch]
+    log = get_sb_log(opts)
 
-# very simple dupe of main logic in spiderBro, leaving out some features for brevity
-for series in ("Psychoville", "Game Of Thrones", "American Dad!", "The Whitest Kids U Know"):
-    print "Searching for Series: %s" % series
-    for m_season, m_episode in [("3", "3"), ("2", "10"), ("5", "-1"), ("1", "-1"), ("7", "-1"), ("4", "-1")]:
-        found = False
-        print "s%s e%s:" % (m_season, m_episode)
-        for site in [btjunkiesearch]:
-            if not found:
-                p = site()
-                #print "\tSearching: " + p.name + "for s" + m_season + "e" + m_episode
-                if m_episode == "-1":
-                    matches = sn_matches
-                else:
-                    matches = ep_matches
-                for f in matches:
-                    s = f()
-                    v = p.search(series, m_season, m_episode, f)
-                    if v:
-                        print "ACCEPTED " + v
-                        found = True
-                        break
+    #base = base_search()
+    #base.search("Game of Thrones", "1", "3", sNeN, tags, True)
+
+    p = pb()
+    result = p.search("Game of Thrones", "1", "3", sNeN, tags, True)
+    if result: log.info("\t\tFound Torrent: %s" % result)
+
+    b = bt()
+    result = b.search("Game of Thrones", "1", "3", sNeN, tags, False)
+    if result: log.info("\t\tFound Torrent: %s" % result)
