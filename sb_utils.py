@@ -60,7 +60,6 @@ class NNN:
 # Searches
 #####################################################################################
 
-# TODO: define a base class search, with "search", "validate" etc methods, let piratebay etc derive from this
 class base_search:
     def __init__(self):
         self.name = "Base Search Class"
@@ -119,8 +118,8 @@ class base_search:
         return True
 
     def generate_search_terms(self, name):
-        li = [name]
         regser = re.compile(" \([0-9a-zA-Z]{2,4}\)").sub('', name)
+        li = [name, regser]
         hli =[]
         for l in li:
             hyphen = " ".join(l.split("-"))
