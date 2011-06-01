@@ -93,14 +93,26 @@ class base_search:
 
     def validate_link(self, series, s_ep_str, link, tags, is_high_q, is_season):
         lg = logging.getLogger('spiderbro')
-        lg.debug('\t\tValidating %s' % (link))
+        if "torrent" in link:
+            lg.debug('\t\tValidating %s' % (link))
         # First validate the link title is ok
         is_torrent = re.compile(".*torrent$")
-        if( (not is_torrent.match(link)) or (is_high_q and "720p" not in link) or ((not is_high_q) and "720p" in link)):
+        if(not is_torrent.match(link)):
+            #lg.debug("\t\t\tValidation FAILED: Link is not a torrent")
+            return False
+            
+        if (is_high_q and "720p" not in link): 
+            lg.debug("\t\t\tValidation FAILED: Quality is HighQ but 720p not found in torrent")
+            return False
+
+        if((not is_high_q) and "720p" in link):
+            lg.debug("\t\t\tValidation FAILED: Quality is lowQ but 720p found in torrent")
             return False
 
         for t in tags:
-            if t.lower() in link.lower(): return False
+            if t.lower() in link.lower(): 
+                lg.debug("\t\t\tValidation FAILED: tag filter %s found in torrent" % t)
+                return False
         
         if is_season: 
             # we are searching for a linkrent of an entire season
@@ -111,30 +123,55 @@ class base_search:
             # we are searching for an episode
             if (s_ep_str in link.lower() and  self.delimiter.join(series.split(" ")).lower() in link.lower()):
                 return True
+            else:
+                lg.debug("\t\t\tValidation FAILED: s_ep_str %s or %s not found in link title" % (s_ep_str, self.delimiter.join(series.split(" ")).lower()))
+
         
         return False
 
+    # child classes can define their own site-specific page validation, see piratebaysearch for an example
     def validate_page(self, tor):
         return True
 
+    # break the series name up and try different variations of it 
+    # eg: "Blah & Blah (2010)" -> ["Blah & Blah (2010)", "Blah & Blah", "Blah and Blah (2010)", "Blah and Blah"] etc
     def generate_search_terms(self, name):
         regser = re.compile(" \([0-9a-zA-Z]{2,4}\)").sub('', name)
         li = [name, regser]
+        
+        # TODO: fix this ugly code, maybe loop through funciton list and apply each one to data
+
         hli =[]
         for l in li:
             hyphen = " ".join(l.split("-"))
             hli.append(hyphen)
         if hli: li.extend(hli)
+
+        cli =[]
+        for l in li:
+            comma = " ".join(l.split(","))
+            cli.append(comma)
+        if cli: li.extend(cli)
+
+
+        ali =[]
+        for l in li:
+            ampersand = "and".join(l.split("&"))
+            ali.append(ampersand)
+        if cli: li.extend(ali)
+
         return list(set(li))
     
     def get_search_url(self, name, maskval):
         return "www.thisisabaseclassyouidiot.com"
 
 
+# Child classes need to define self.delimiter, get_search_url and optionally validate_page 
 class piratebaysearch(base_search):
     def __init__(self):
         self.name = "piratebay"
-        self.delimiter = "_"
+        # TODO has piratebay switched to "." or do some links still use "_"?
+        self.delimiter = "."
     
     def get_search_url(self, name, maskval):
         return "http://thepiratebay.org/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
@@ -186,6 +223,7 @@ class btjunkiesearch(base_search):
                 lg.debug("\t\tValidated (validation check image is present)")
                 return True
 
+        # otherwise check if good > fake (TODO: Check seeds > 0)
         b = val_tags.findAll('b')
         for bs in b:
             if bs.string:
@@ -200,18 +238,6 @@ class btjunkiesearch(base_search):
         else:
             lg.debug("\t\tValidation FAILED: good <= fake (good: %s fake: %s)" % (good, fake))
             return False
-
-
-#####################################################################################
-# split something like "Archer (2009)" into ["Archer (2009)", "Archer"]
-# can be extended later to include more search patterns
-#####################################################################################
-
-def get_seriesname_list(str):
-    regser = re.compile(" \([0-9a-zA-Z]{2,4}\)").sub('', str)
-    hyphen = " ".join(str.split("-"))
-    li = [str, regser, hyphen]
-    return list(set(li))
 
 
 #####################################################################################

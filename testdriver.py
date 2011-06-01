@@ -13,10 +13,10 @@ if __name__ == "__main__":
     #base = base_search()
     #base.search("Game of Thrones", "1", "3", sNeN, tags, True)
 
-    p = pb()
+    p = piratebaysearch()
     result = p.search("Game of Thrones", "1", "3", sNeN, tags, True)
     if result: log.info("\t\tFound Torrent: %s" % result)
 
-    b = bt()
+    b = btjunkiesearch()
     result = b.search("Game of Thrones", "1", "3", sNeN, tags, False)
     if result: log.info("\t\tFound Torrent: %s" % result)
