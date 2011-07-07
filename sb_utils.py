@@ -7,6 +7,7 @@ from deluge.ui.client import client
 from twisted.internet import defer
 from twisted.internet import reactor
 import ConfigParser
+import traceback
 from db_manager import *
 import logging
 import re
@@ -122,6 +123,7 @@ class base_search:
         else:
             # we are searching for an episode
             if (s_ep_str in link.lower() and  self.delimiter.join(series.split(" ")).lower() in link.lower()):
+                # TODO: this is failing and causing errors in the btjunkie search
                 return True
             else:
                 lg.debug("\t\t\tValidation FAILED: s_ep_str %s or %s not found in link title" % (s_ep_str, self.delimiter.join(series.split(" ")).lower()))
@@ -187,7 +189,11 @@ class piratebaysearch(base_search):
         data = BeautifulSoup(html)
         details = data.findAll("dl", { "class" : "col2" })
         # This is ugly as sin, I think beautifulsoup has some problems with <dt> and <dd> tags?
-        for d in details: seeds = int(seeds_reg.findall(str(d))[0].replace("Seeders:</dt>\n<dd>", ""))
+        for d in details: 
+            try:
+                seeds = int(seeds_reg.findall(str(d))[0].replace("Seeders:</dt>\n<dd>", ""))
+            except:
+                lg.error("\t\tError parsing seeders for piratebay")
         if seeds > 0:
             lg.debug("\t\tValidation passed, torrent has %s seeds..." % seeds)
             return True
@@ -605,6 +611,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
     elif ep_list:
         # search for sX eX using every search site and every filemask until torrent is found
         for s, e in ep_list:
+            l.debug("DEBUG EPISODE IS: %s", e)
             found = False
             # if searching for full season season use season mask list
             if(e == "-1"):
@@ -629,6 +636,8 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
                             l.error("%s timed out?" % ex)
                         except Exception, e:
                             l.error("Error: %s" % e)
+                            traceback.print_exc()
+                            #sys.exit()
             if not found:
                 #check episode is not in current season, do not search again if so
                 ep_season = int(s)

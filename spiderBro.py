@@ -17,7 +17,7 @@ from sb_utils import *
 
 e_masks = [NxN, sNeN, NNN]
 s_masks = [season, series]
-ignore_taglist = ["SWESUB", "SPANISH", "GERMAN"]
+ignore_taglist = ["SWESUB", "SPANISH", "GERMAN", "WEBRIP", "HBOGO"]
 search_list = [piratebaysearch, btjunkiesearch]
 # these could be made configurable
 socket.setdefaulttimeout(10)
