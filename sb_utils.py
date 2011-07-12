@@ -611,7 +611,6 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
     elif ep_list:
         # search for sX eX using every search site and every filemask until torrent is found
         for s, e in ep_list:
-            l.debug("DEBUG EPISODE IS: %s", e)
             found = False
             # if searching for full season season use season mask list
             if(e == "-1"):
