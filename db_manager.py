@@ -110,7 +110,7 @@ class db_manager:
             self.sb_db_set("""update shows set finished = 1 where showname = \"%s\" """ % sname)
 
         def add_show(self, sid, sname, finished):
-            self.sb_db_set("""insert into shows (series_id, showname, finished) VALUES (\"%s\",\"%s\",\"%s\")""" % (sid,sname,finished))
+            self.sb_db_set("""insert or replace into shows (series_id, showname, finished) VALUES (\"%s\",\"%s\",\"%s\")""" % (sid,sname,finished))
 
         def add_to_urls_seen(self, sname, s, e, url):
             self.sb_db_set("""insert into urls_seen (showname,season,episode,url) VALUES (\"%s\",\"%s\",\"%s\",\"%s\")""" % (sname,s,e,url))

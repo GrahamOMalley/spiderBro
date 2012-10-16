@@ -15,6 +15,9 @@ import sys
 import time
 import urllib2
 import pdb
+import string
+from os.path import basename
+from urlparse import urlsplit
 
 # nasty global
 dl_these = []
@@ -23,6 +26,25 @@ dl_these = []
 # Filemasks
 #####################################################################################
 
+def url2name(url):
+    return basename(urlsplit(url)[2])
+
+    def download(url, localFileName = None):
+        localName = url2name(url)
+        req = urllib2.Request(url)
+        r = urllib2.urlopen(req)
+        if r.info().has_key('Content-Disposition'):
+        # If the response has Content-Disposition, we take file name from it
+            localName = r.info()['Content-Disposition'].split('filename=')[1]
+            if localName[0] == '"' or localName[0] == "'":
+                localName = localName[1:-1]
+            elif r.url != url: 
+                # if we were redirected, the real file name we take from the final URL
+                localName = url2name(r.url)
+                if localFileName: 
+                    # we can force to save the file as specified name
+                    localName = localFileName
+                    return localName
 class season:
     def __init__(self):
         self.descr = "season"
@@ -65,9 +87,13 @@ class base_search:
     def __init__(self):
         self.name = "Base Search Class"
         self.delimiter = " "
+        self.can_get_tor_from_main_page = True
 
     def search(self, series_name, sn, ep, fmask, tags, is_high_qual):
         lg = logging.getLogger('spiderbro')
+        series_name = series_name.replace("::", "")
+        series_name = series_name.replace(": ", " ")
+        series_name = series_name.replace(":", " ")
         series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":"])
         series_name = series_name.replace("&", "and")
         m = fmask()
@@ -85,22 +111,37 @@ class base_search:
                 print "Couldn't open %s" % search_url
                 return ""
             sps = BeautifulSoup(search_page)
-            links = sps.findAll('a', href=re.compile("^http"))
+            links = sps.findAll('a', href=re.compile(self.get_links_from_main_page_re()))
             for l in links:
                 if self.validate_link(series_search_term, season_or_ep_str, l['href'], tags, is_high_qual, is_season):
                     if self.validate_page(l['href']):
-                        return l['href']
+                        if self.can_get_tor_from_main_page:
+                            return l['href']
+                        else:
+                            return self.get_torrent_from_validated_page(l['href'])
+        return ""
+
+    def get_links_from_main_page_re(self):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\tbase: get links from main page using regexp: ^http")
+        return "^http"
+
+    def get_torrent_from_validated_page(self, page):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("base: get torrent from validated page using regexp: \"\"")
         return ""
 
     def validate_link(self, series, s_ep_str, link, tags, is_high_q, is_season):
         lg = logging.getLogger('spiderbro')
-        if "torrent" in link:
-            lg.debug('\t\tValidating %s' % (link))
+        lg.debug("\t\tbase: validating link: " + link)
         # First validate the link title is ok
-        is_torrent = re.compile(".*torrent$")
+        #is_torrent = re.compile(".*torrent$")
+        is_torrent = re.compile(self.get_is_link_a_torrent_re())
         if(not is_torrent.match(link)):
             #lg.debug("\t\t\tValidation FAILED: Link is not a torrent")
             return False
+        else:
+            lg.debug('\t\tValidating %s' % (link))
             
         if (is_high_q and "720p" not in link): 
             lg.debug("\t\t\tValidation FAILED: Quality is HighQ but 720p not found in torrent")
@@ -133,6 +174,8 @@ class base_search:
 
     # child classes can define their own site-specific page validation, see piratebaysearch for an example
     def validate_page(self, tor):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\tbase: validate page (return true)")
         return True
 
     # break the series name up and try different variations of it 
@@ -146,6 +189,11 @@ class base_search:
         hli =[]
         for l in li:
             hyphen = " ".join(l.split("-"))
+            hli.append(hyphen)
+        if hli: li.extend(hli)
+
+        for l in li:
+            hyphen = " ".join(l.split(":"))
             hli.append(hyphen)
         if hli: li.extend(hli)
 
@@ -167,6 +215,8 @@ class base_search:
     def get_search_url(self, name, maskval):
         return "www.thisisabaseclassyouidiot.com"
 
+    def get_is_link_a_torrent_re(self):
+        return ".*torrent$"
 
 # Child classes need to define self.delimiter, get_search_url and optionally validate_page 
 class piratebaysearch(base_search):
@@ -174,16 +224,26 @@ class piratebaysearch(base_search):
         self.name = "piratebay"
         # TODO has piratebay switched to "." or do some links still use "_"?
         self.delimiter = "."
-    
+        self.can_get_tor_from_main_page = True
+
+    def get_is_link_a_torrent_re(self):
+        return "^magnet"
+
+    def get_links_from_main_page_re(self):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\tpiratebay: get links from main page using regexp: ^magnet")
+        return "^magnet"
+
     def get_search_url(self, name, maskval):
-        return "http://thepiratebay.org/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
+        return "http://thepiratebay.se/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
     
     def validate_page(self, tor):
+        return True
         seeds = 0
         seeds_reg = re.compile("Seeders:</dt>\n<dd>[0-9]{1,9}")
         lg = logging.getLogger('spiderbro')
         lg.debug("\t\tDoing piratebay page validation")
-        turl = tor.replace("http://torrents.thepiratebay.org", "http://thepiratebay.org/torrent")
+        turl = tor.replace("http://torrents.thepiratebay.se", "http://thepiratebay.se/torrent")
         resp = urllib2.urlopen(turl)
         html = resp.read()
         data = BeautifulSoup(html)
@@ -201,13 +261,72 @@ class piratebaysearch(base_search):
             lg.debug("\t\tValidation FAILED, torrent has no seeds...")
         return False
 
+class extratorrentsearch(base_search):
+    def __init__(self):
+        self.name = "extratorrent"
+        self.delimiter = "."
+        self.can_get_tor_from_main_page = False
+
+    def get_links_from_main_page_re(self):
+        return ".*torrent$"
+
+    def get_search_url(self, name, maskval):
+        return "http://extratorrent.com/search/?search=" + "+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "&new=1&x=0&y=0"
+
+    def validate_page(self, tor):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\t\tDoing extratorrent page validation for: "+tor)
+        lg.debug("\t\tNot Implemented: extratorrent page validation, returning true")
+        return True
+
+    def get_torrent_from_validated_page(self, page):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\t\tConverting torrent url to ext format : "+page)
+        return "http://extratorrent.com" + page.replace("torrent_", "")
+
+
+#TODO kickasstorrents?
+
+class isohuntsearch(base_search):
+    def __init__(self):
+        self.name = "isohunt"
+        self.delimiter = "+"
+        self.can_get_tor_from_main_page = False
+
+    def get_links_from_main_page_re(self):
+        return ".*"
+
+    def get_is_link_a_torrent_re(self):
+        return ".*tab=summary$"
+
+    def get_search_url(self, name, maskval):
+        return "http://isohunt.com/torrents/" + "+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "?iht=-1&ihp=1&ihs1=1&iho1=d"
+
+    def get_torrent_from_validated_page(self, page):
+        turl = "http://www.isohunt.com" + page
+        resp = urllib2.urlopen(turl)
+        val_page = resp.read()
+        val_tags = BeautifulSoup(val_page)
+        links = val_tags.findAll('a', href=re.compile("ca.*torrent"))
+        for l in links:
+            return string.lower(l['href'])
+        return ""
+
+    def validate_page(self, tor):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\t\tDoing isohunt page validation for: "+tor)
+        lg.debug("\t\tNot Implemented: isohunt page validation, returning true")
+        return True
+
+# RIP BTJunkie :(
+# leaving this dead class here as an example of how to override the base class
 class btjunkiesearch(base_search):
     def __init__(self):
         self.name = "btjunkie"
         self.delimiter = "-"
     
     def get_search_url(self, name, maskval):
-        return "http://btjunkie.org/search?q="+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" "))
+        return "http://btjunkie.se/search?q="+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" "))
 
     def validate_page(self, tor):
         lg = logging.getLogger('spiderbro')
@@ -225,7 +344,7 @@ class btjunkiesearch(base_search):
         # first check if btjunkie verified image is present
         im = val_tags.findAll('img')
         for i in im:
-            if(i['src'] == "http://static.btjunkie.org/images/verified_check1.gif"):
+            if(i['src'] == "http://static.btjunkie.se/images/verified_check1.gif"):
                 lg.debug("\t\tValidated (validation check image is present)")
                 return True
 
@@ -412,7 +531,6 @@ def get_episode_list(series, o):
         for i in data.findAll('episode', recursive=False):
             if(i.seasonnumber.string != '0'):
                 season = i.seasonnumber.string
-                highest_season = max(highest_season, int(i.seasonnumber.string))
                 ep = i.episodenumber.string
                 try:
                     fa = i.firstaired.string.split('-')
@@ -420,6 +538,7 @@ def get_episode_list(series, o):
                     # need to compare current date to air date, ignore if not aired yet
                     if date.today() > airdate:
                         aired_list.append((season, ep))
+                        highest_season = max(highest_season, int(i.seasonnumber.string))
                 except:
                     pass
     except:
@@ -448,9 +567,10 @@ def get_episode_list(series, o):
         seas = [c for c in aired_s if c not in have_s]
     else:
         seas = [c for c in aired_s if((c not in have_s) and (int(c) < highest_season))]
-    
+
     have_seas = [val for val in have_list if val[1] == "-1"]
     ep_list = [val for val in aired_list if val not in have_list]
+
     for s in seas:
         ep_list = [c for c in ep_list if c[0] != s]
         ep_list.append((s, "-1"))
@@ -685,7 +805,11 @@ def on_connect_success(result):
     # TODO: get rid of this nasty global variable
     for tp in dl_these:
         di = {'download_location':tp['save_dir']}
-        df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
+        # added support for magnet links
+        if(str(tp["url"]).startswith("magnet:")):
+            df = client.core.add_torrent_magnet(tp["url"], di).addCallback(add_tor, tp["url"])
+        else:
+            df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
         init_list.append(df)
         #add url to database - ideally would be nice to do this in callback, but dont have info there?
         d.add_to_urls_seen(tp['showname'], tp['season'], tp['episode'], tp['url'])

@@ -18,7 +18,9 @@ from sb_utils import *
 e_masks = [NxN, sNeN, NNN]
 s_masks = [season, series]
 ignore_taglist = ["SWESUB", "SPANISH", "GERMAN", "WEBRIP", "HBOGO"]
-search_list = [piratebaysearch, btjunkiesearch]
+#search_list = [piratebaysearch, isohuntsearch, extratorrentsearch]
+search_list = [piratebaysearch]
+#search_list = [extratorrentsearch, isohuntsearch]
 # these could be made configurable
 socket.setdefaulttimeout(10)
 
@@ -72,7 +74,7 @@ if(opts['use_whole_lib']):
 
     full_showlist = db.xbmc_get_showlist()
     for show in full_showlist:
-        if(show[0] not in ignore_list):
+        if(show[0].decode('latin-1', 'replace') not in ignore_list):
             hunt_eps(show[0], opts, search_list, s_masks, e_masks, ignore_taglist)
 
 else:
