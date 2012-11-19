@@ -36,7 +36,7 @@ class db_manager:
                 conn = sqlite3.connect(self.sb_db_file)
                 self.log.debug('Internal db does not exist, Creating Schema...')
                 conn.execute("""create table if not exists shows (series_id INT PRIMARY KEY, showname TEXT unique, finished INT default 0, is_anime INT default 0, high_quality INT default 0)""")
-                conn.execute("""create table if not exists urls_seen (showname TEXT, season INT, episode INT, url TEXT)""")
+                conn.execute("""create table if not exists urls_seen (showname TEXT, season INT, episode INT, url TEXT, savepath TEXT)""")
                 conn.close()
             else:
                 self.log.debug('Database exists, assume schema does, too.')
@@ -112,8 +112,8 @@ class db_manager:
         def add_show(self, sid, sname, finished):
             self.sb_db_set("""insert or replace into shows (series_id, showname, finished) VALUES (\"%s\",\"%s\",\"%s\")""" % (sid,sname,finished))
 
-        def add_to_urls_seen(self, sname, s, e, url):
-            self.sb_db_set("""insert into urls_seen (showname,season,episode,url) VALUES (\"%s\",\"%s\",\"%s\",\"%s\")""" % (sname,s,e,url))
+        def add_to_urls_seen(self, sname, s, e, url, savedir):
+            self.sb_db_set("""insert into urls_seen (showname,season,episode,url,savepath) VALUES (\"%s\",\"%s\",\"%s\",\"%s\",\"%s\")""" % (sname,s,e,url,savedir))
 
         def clear_cache(self, sname):
             self.sb_db_set("""delete from urls_seen where showname=\"%s\"""" % (sname))

@@ -471,6 +471,10 @@ def get_config_file(filename):
         opts['xbmc_sqlite_db'] = config.get("options", "xbmc_sqlite_db")
     except:
         opts['xbmc_sqlite_db'] = "test.db"
+    try:
+        opts['use_filerenamer'] = config.getboolean("options", "use_filerenamer")
+    except:
+        opts['use_filerenamer'] = False
     
     return opts
 
@@ -717,10 +721,25 @@ def get_shows_from_file(fname):
 # The function that actually grabs our episodes
 #####################################################################################
 
+def normalize_series_name(name):
+    dir_id = name
+    dir_id = str.lower(dir_id)
+    dir_id = dir_id.replace("::", "")
+    dir_id = dir_id.replace(": ", " ")
+    dir_id = dir_id.replace(":", " ")
+    dir_id = "".join(ch for ch in dir_id if ch not in ["!", "'", ":", "(", ")", ".", ","])
+    dir_id = dir_id.replace("&", "and")
+    dir_id = dir_id.replace(" ", "_") 
+    return dir_id
+    
+
 def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
     l = logging.getLogger('spiderbro')
     d = db_manager()
-    dir = opts['tv_dir'] + series_name.replace(" ", "_").replace("'", "").lower()
+    dir_id = normalize_series_name(series_name)
+    dir = opts['tv_dir'] + dir_id
+
+    
     is_high_quality = d.get_show_high_quality(series_name)
 
     ep_list, ended, highest_season = get_episode_list(series_name, opts)
@@ -747,7 +766,10 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
                             url = site.search(series_name, s, e, mk_ctor, ignore_tags, is_high_quality)
                             if url:
                                 l.info("\t\tFound torrent: %s" % url)
-                                dict = {'url':url, "save_dir":dir, 'showname':series_name, "season":s, "episode":e}
+                                save_dir = dir
+                                if(opts["use_filerenamer"]):
+                                    save_dir = dir + "s" + s + "e" + e
+                                dict = {'url':url, "save_dir":save_dir, 'showname':series_name, "season":s, "episode":e}
                                 dl_these.append(dict)
                                 found = True
                                 break
@@ -762,7 +784,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
                 ep_season = int(s)
                 if ((ep_season < highest_season) or (opts['force_learn']) or ended):
                     l.info("Cannot find torrent for: %s season %s episode %s - skipping this in future" % (series_name, s, e))
-                    d.add_to_urls_seen(series_name, s, e, "None")
+                    d.add_to_urls_seen(series_name, s, e, "None", "None")
             l.info("")
 
 #####################################################################################
@@ -812,7 +834,7 @@ def on_connect_success(result):
             df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
         init_list.append(df)
         #add url to database - ideally would be nice to do this in callback, but dont have info there?
-        d.add_to_urls_seen(tp['showname'], tp['season'], tp['episode'], tp['url'])
+        d.add_to_urls_seen(tp['showname'], tp['season'], tp['episode'], tp['url'], tp['save_dir'])
 
     dl = defer.DeferredList(init_list)
     dl.addCallback(dl_finish)
