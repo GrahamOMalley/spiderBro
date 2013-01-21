@@ -143,11 +143,11 @@ class base_search:
         else:
             lg.debug('\t\tValidating %s' % (link))
             
-        if (is_high_q and "720p" not in link): 
+        if (is_high_q and not (("720p" in link.lower()) or ("1080p" in link.lower()))): 
             lg.debug("\t\t\tValidation FAILED: Quality is HighQ but 720p not found in torrent")
             return False
 
-        if((not is_high_q) and "720p" in link):
+        if ( not is_high_q and (("720p" in link.lower()) or ("1080p" in link.lower()))): 
             lg.debug("\t\t\tValidation FAILED: Quality is lowQ but 720p found in torrent")
             return False
 

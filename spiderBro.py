@@ -15,7 +15,7 @@ from sb_utils import *
 # globals
 #################################################################################################################
 
-e_masks = [NxN, sNeN, NNN]
+e_masks = [sNeN, NxN, NNN]
 s_masks = [season, series]
 ignore_taglist = ["SWESUB", "SPANISH", "GERMAN", "WEBRIP", "HBOGO"]
 #search_list = [piratebaysearch, isohuntsearch, extratorrentsearch]
