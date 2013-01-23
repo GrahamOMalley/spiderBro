@@ -133,12 +133,9 @@ class base_search:
 
     def validate_link(self, series, s_ep_str, link, tags, is_high_q, is_season):
         lg = logging.getLogger('spiderbro')
-        lg.debug("\t\tbase: validating link: " + link)
         # First validate the link title is ok
-        #is_torrent = re.compile(".*torrent$")
         is_torrent = re.compile(self.get_is_link_a_torrent_re())
         if(not is_torrent.match(link)):
-            #lg.debug("\t\t\tValidation FAILED: Link is not a torrent")
             return False
         else:
             lg.debug('\t\tValidating %s' % (link))
@@ -157,14 +154,13 @@ class base_search:
                 return False
         
         if is_season: 
-            # we are searching for a linkrent of an entire season
+            # we are searching for a torrent of an entire season
             s_ep_str = s_ep_str.replace(" ", self.delimiter).lower()
             if (s_ep_str in link.lower() or (s_ep_str.replace(self.delimiter, self.delimiter+"0") in link.lower())):
                 return True
         else:
             # we are searching for an episode
             if (s_ep_str in link.lower() and  self.delimiter.join(series.split(" ")).lower() in link.lower()):
-                # TODO: this is failing and causing errors in the btjunkie search
                 return True
             else:
                 lg.debug("\t\t\tValidation FAILED: s_ep_str %s or %s not found in link title" % (s_ep_str, self.delimiter.join(series.split(" ")).lower()))
@@ -222,8 +218,7 @@ class base_search:
 class piratebaysearch(base_search):
     def __init__(self):
         self.name = "piratebay"
-        # TODO has piratebay switched to "." or do some links still use "_"?
-        self.delimiter = "."
+        self.delimiter = "+"
         self.can_get_tor_from_main_page = True
 
     def get_is_link_a_torrent_re(self):
