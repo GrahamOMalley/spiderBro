@@ -7,27 +7,29 @@
 # using the deluge rpc interface
 #
 #################################################################################################################
-
 import socket
+from datetime import datetime
 from sb_utils import *
-
 #################################################################################################################
 # globals
 #################################################################################################################
 
+startTime = datetime.now()
 e_masks = [sNeN, NxN, NNN]
 s_masks = [season, series]
 ignore_taglist = ["SWESUB", "SPANISH", "GERMAN", "WEBRIP", "HBOGO"]
 #search_list = [piratebaysearch, isohuntsearch, extratorrentsearch]
 search_list = [piratebaysearch]
-#search_list = [extratorrentsearch, isohuntsearch]
-# these could be made configurable
 socket.setdefaulttimeout(10)
 
 #################################################################################################################
 # get our config file and params
 #################################################################################################################
 
+args = configure_all()
+sys.exit()
+
+# TODO: kill this
 opts = get_config_file("/home/gom/.spiderBro/config.ini")
 opts.update(get_params(sys.argv))
 if "force_show" in opts: opts['use_whole_lib'] = False

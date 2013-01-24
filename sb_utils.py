@@ -1,4 +1,14 @@
 #! /usr/bin/env python
+import ConfigParser
+import argparse
+import logging
+import re
+import string
+import sys
+import time
+import traceback
+import urllib2
+
 from BeautifulSoup import BeautifulSoup
 from datetime import date
 from datetime import datetime
@@ -6,18 +16,8 @@ from deluge.log import setupLogger
 from deluge.ui.client import client
 from twisted.internet import defer
 from twisted.internet import reactor
-import ConfigParser
-import traceback
-from db_manager import *
-import logging
-import re
-import sys
-import time
-import urllib2
-import pdb
-import string
-from os.path import basename
-from urlparse import urlsplit
+
+from db_manager import db_manager
 
 # nasty global
 dl_these = []
@@ -26,25 +26,6 @@ dl_these = []
 # Filemasks
 #####################################################################################
 
-def url2name(url):
-    return basename(urlsplit(url)[2])
-
-    def download(url, localFileName = None):
-        localName = url2name(url)
-        req = urllib2.Request(url)
-        r = urllib2.urlopen(req)
-        if r.info().has_key('Content-Disposition'):
-        # If the response has Content-Disposition, we take file name from it
-            localName = r.info()['Content-Disposition'].split('filename=')[1]
-            if localName[0] == '"' or localName[0] == "'":
-                localName = localName[1:-1]
-            elif r.url != url: 
-                # if we were redirected, the real file name we take from the final URL
-                localName = url2name(r.url)
-                if localFileName: 
-                    # we can force to save the file as specified name
-                    localName = localFileName
-                    return localName
 class season:
     def __init__(self):
         self.descr = "season"
@@ -180,8 +161,6 @@ class base_search:
         regser = re.compile(" \([0-9a-zA-Z]{2,4}\)").sub('', name)
         li = [name, regser]
         
-        # TODO: fix this ugly code, maybe loop through funciton list and apply each one to data
-
         hli =[]
         for l in li:
             hyphen = " ".join(l.split("-"))
@@ -279,9 +258,6 @@ class extratorrentsearch(base_search):
         lg.debug("\t\tConverting torrent url to ext format : "+page)
         return "http://extratorrent.com" + page.replace("torrent_", "")
 
-
-#TODO kickasstorrents?
-
 class isohuntsearch(base_search):
     def __init__(self):
         self.name = "isohunt"
@@ -343,7 +319,7 @@ class btjunkiesearch(base_search):
                 lg.debug("\t\tValidated (validation check image is present)")
                 return True
 
-        # otherwise check if good > fake (TODO: Check seeds > 0)
+        # otherwise check if good > fake (Check seeds > 0)
         b = val_tags.findAll('b')
         for bs in b:
             if bs.string:
@@ -358,6 +334,50 @@ class btjunkiesearch(base_search):
         else:
             lg.debug("\t\tValidation FAILED: good <= fake (good: %s fake: %s)" % (good, fake))
             return False
+
+
+# TODO:
+def configure_all():
+    # Set up config file
+    conf_parser = argparse.ArgumentParser(add_help=False)
+    conf_parser.add_argument("-c", "--conf_file", help="Specify config file", metavar="FILE")
+    args, remaining_argv = conf_parser.parse_known_args()
+    defaults = {
+            "tv_dir" : "some default",
+            }
+    if args.conf_file:
+        config = ConfigParser.SafeConfigParser()
+        config.read([args.conf_file])
+        defaults = dict(config.items("spiderbro"))
+
+    # Don't surpress add_help here so it will handle -h
+    parser = argparse.ArgumentParser(parents=[conf_parser], formatter_class=argparse.RawDescriptionHelpFormatter, description='Spiderbro! Spiderbro! Finding episodes for your shows!')
+    parser.add_argument('--test',  action="store_true", default=False, help='Don\'t actually download episodes')
+    parser.add_argument('--debug_logging',  action="store_true", default=False, help='Turn on Debug Logging')
+    parser.add_argument('--xbmc_sqlite_db', type=str, required=False, default="", help='XBMC SQLite DB')
+    parser.add_argument('--mysql',  action="store_true", default=True, help='Use Mysql DB')
+    parser.add_argument('--host', type=str, required=False, default="", help='Mysql host')
+    parser.add_argument('--user', type=str, required=False, default="", help='Mysql user')
+    parser.add_argument('--pwd', type=str, required=False, default="", help='Mysql password')
+    parser.add_argument('--schema', type=str, required=False, default="", help='MySql schema')
+
+    parser.add_argument('-a', '--all',  action="store_true", default=True, help='Find episodes for all shows')
+    parser.add_argument('-v', '--verbose',  action="store_true", default=False, help='Verbose output')
+    parser.add_argument('-l', '--force_learn',  action="store_true", default=False, help='Force SB to mark episode(s) as downloaded')
+    parser.add_argument('-p', '--polite',  action="store_true", default=False, help='Wait N seconds before opening each url')
+    parser.add_argument('-f', '--file_renamer',  action="store_true", default=True, help='Use the file_renamer script after torrent downloads')
+    
+    parser.add_argument('-s', '--show', type=str, required=False, help='Find episodes for a single show')
+    parser.add_argument('-t', '--tv_dir', type=str, required=False, default='/home/gom/nas/tv/', help='TV directory')
+    parser.add_argument('-d', '--db_file', type=str, required=False, default='spiderbro.db', help='Spiderbro internal database file')
+    parser.add_argument('-pv', '--polite-value', type=int, required=False, default=5, help='Num seconds for polite')
+    parser.add_argument('-ld', '--log_dir', type=str, required=False, default="log", help='Num seconds for polite')
+
+    parser.set_defaults(**defaults)
+    args = parser.parse_args(remaining_argv)
+    print args
+    return args
+
 
 
 #####################################################################################
