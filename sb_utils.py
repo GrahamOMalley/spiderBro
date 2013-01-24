@@ -336,11 +336,11 @@ class btjunkiesearch(base_search):
             return False
 
 
-# TODO:
+# TODO: refactor configure args and config file
 def configure_all():
     # Set up config file
     conf_parser = argparse.ArgumentParser(add_help=False)
-    conf_parser.add_argument("-c", "--conf_file", help="Specify config file", metavar="FILE")
+    conf_parser.add_argument("-c", "--conf_file", help="Specify config file", metavar="FILE", default="/home/gom/code/python/spider_bro/config.ini")
     args, remaining_argv = conf_parser.parse_known_args()
     defaults = {
             "tv_dir" : "some default",
