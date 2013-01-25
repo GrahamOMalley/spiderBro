@@ -26,13 +26,8 @@ socket.setdefaulttimeout(10)
 # get our config file and params
 #################################################################################################################
 
-args = configure_all()
-sys.exit()
-
-# TODO: kill this
-opts = get_config_file("/home/gom/.spiderBro/config.ini")
-opts.update(get_params(sys.argv))
-if "force_show" in opts: opts['use_whole_lib'] = False
+opts = configure_all()
+if opts.show: opts.all = False
 
 #################################################################################################################
 # Set up the logger to print out errors
@@ -47,15 +42,13 @@ log = get_sb_log(opts)
 setup_db_manager(opts)
 db = db_manager()
 
-db_do_opts(opts)
-
 #################################################################################################################
 # If using the shows file, open and get shows list
 #################################################################################################################
 
 shows_list = []
-if(('shows_file' in opts and not opts['use_whole_lib']) and 'force_show' not in opts):
-    shows_list = get_shows_from_file(opts['shows_file'])
+if(opts.shows_file and not opts.all and opts.show):
+    shows_list = get_shows_from_file(opts.shows_file)
 
 #################################################################################################################
 # Get the list of shows that are complete so we can safely ignore them
@@ -68,7 +61,7 @@ shows_list = [val for val in shows_list if val not in ignore_list]
 # Main
 #################################################################################################################
 
-if(opts['use_whole_lib']):
+if(opts.all):
     #
     # if USE_WHOLE_LIB, we get the complete list of shows from xbmc, minus the finished shows (if any)
     #
@@ -83,8 +76,8 @@ else:
     #
     # if FORCE_SHOW, get specified show
     #
-    if('force_show' in opts):
-        hunt_eps(opts['force_show'], opts, search_list, s_masks, e_masks, ignore_taglist)
+    if(opts.show):
+        hunt_eps(opts.show, opts, search_list, s_masks, e_masks, ignore_taglist)
     #
     # if SHOWS_LIST, get for list of shows
     #

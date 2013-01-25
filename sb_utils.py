@@ -335,16 +335,12 @@ class btjunkiesearch(base_search):
             lg.debug("\t\tValidation FAILED: good <= fake (good: %s fake: %s)" % (good, fake))
             return False
 
-
-# TODO: refactor configure args and config file
 def configure_all():
     # Set up config file
     conf_parser = argparse.ArgumentParser(add_help=False)
-    conf_parser.add_argument("-c", "--conf_file", help="Specify config file", metavar="FILE", default="/home/gom/code/python/spider_bro/config.ini")
+    conf_parser.add_argument("--conf_file", help="Specify config file", metavar="FILE", default="/home/gom/code/python/spider_bro/config.ini")
     args, remaining_argv = conf_parser.parse_known_args()
-    defaults = {
-            "tv_dir" : "some default",
-            }
+    defaults = {"tv_dir" : "some default",}
     if args.conf_file:
         config = ConfigParser.SafeConfigParser()
         config.read([args.conf_file])
@@ -356,142 +352,78 @@ def configure_all():
     parser.add_argument('--debug_logging',  action="store_true", default=False, help='Turn on Debug Logging')
     parser.add_argument('--xbmc_sqlite_db', type=str, required=False, default="", help='XBMC SQLite DB')
     parser.add_argument('--mysql',  action="store_true", default=True, help='Use Mysql DB')
+
     parser.add_argument('--host', type=str, required=False, default="", help='Mysql host')
     parser.add_argument('--user', type=str, required=False, default="", help='Mysql user')
     parser.add_argument('--pwd', type=str, required=False, default="", help='Mysql password')
     parser.add_argument('--schema', type=str, required=False, default="", help='MySql schema')
 
     parser.add_argument('-a', '--all',  action="store_true", default=True, help='Find episodes for all shows')
-    parser.add_argument('-v', '--verbose',  action="store_true", default=False, help='Verbose output')
+    parser.add_argument('-cc', '--clear_cache',  action="store_true", default=False, help='Clear the internal SB episode cache for show(s)')
+    parser.add_argument('-f', '--use_file_renamer',  action="store_true", default=True, help='Use the file_renamer script after torrent downloads')
+    parser.add_argument('-hq', '--high_quality',  action="store_true", default=False, help='Switch show to high quality')
+    parser.add_argument('-lq', '--low_quality',  action="store_true", default=False, help='Switch show to low quality')
     parser.add_argument('-l', '--force_learn',  action="store_true", default=False, help='Force SB to mark episode(s) as downloaded')
     parser.add_argument('-p', '--polite',  action="store_true", default=False, help='Wait N seconds before opening each url')
-    parser.add_argument('-f', '--file_renamer',  action="store_true", default=True, help='Use the file_renamer script after torrent downloads')
-    
+    parser.add_argument('-v', '--verbose',  action="store_true", default=False, help='Verbose output')
+
+    parser.add_argument('-d', '--db_file', type=str, required=False, default='spiderbro.db', help='Spiderbro internal database file')
+    parser.add_argument('-ld', '--log_dir', type=str, required=False, default="log", help='Logging Dir')
+    parser.add_argument('-pv', '--polite-value', type=int, required=False, default=5, help='Num seconds for polite')
     parser.add_argument('-s', '--show', type=str, required=False, help='Find episodes for a single show')
     parser.add_argument('-t', '--tv_dir', type=str, required=False, default='/home/gom/nas/tv/', help='TV directory')
-    parser.add_argument('-d', '--db_file', type=str, required=False, default='spiderbro.db', help='Spiderbro internal database file')
-    parser.add_argument('-pv', '--polite-value', type=int, required=False, default=5, help='Num seconds for polite')
-    parser.add_argument('-ld', '--log_dir', type=str, required=False, default="log", help='Num seconds for polite')
+    parser.add_argument('--force_id', type=str, required=False, help='Force a show to change its id')
 
     parser.set_defaults(**defaults)
     args = parser.parse_args(remaining_argv)
     print args
     return args
 
+#################################################################################################################
+# 
+#################################################################################################################
+def setup_db_manager(opts):
+    d = db_manager()
 
+    if(opts.db_file):
+        d.init_sb_db(opts.db_file)
+    else:
+        d.init_sb_db('spiderbro.db')
 
-#####################################################################################
-# Deferred callback function for clean exit
-#####################################################################################
-
-def dl_finish(result):
-    l = logging.getLogger('spiderbro')
-    l.info("All deferred calls have fired, exiting program...")
-    client.disconnect()
-    # Stop the twisted main loop and exit
-    reactor.stop()
+    if(opts.mysql):
+        d.xbmc_init_mysql(opts.host, opts.user, opts.pwd, opts.schema) 
+    else: 
+        d.xbmc_init_sqlite(opts.xbmc_sqlite_db) 
+    db_do_opts(opts)
 
 #################################################################################################################
 # force database items from params
 #################################################################################################################
-
 def db_do_opts(opts):
     lg = logging.getLogger('spiderbro')
     db = db_manager()
 
-    if('clear_cache' in opts and 'force_show' in opts):
-        lg.info("Clearing db cache for show %s" % (opts['force_show']))
-        db.clear_cache(opts['force_show'])
+    if(opts.clear_cache and opts.show):
+        lg.info("Clearing db cache for show %s" % (opts.show))
+        db.clear_cache(opts.show)
     
-    if('high_quality' in opts and 'force_show' in opts):
-        lg.info("Changing quality to high for show %s" % (opts['force_show']))
-        db.set_quality(opts['force_show'], 1)
+    if(opts.high_quality and opts.show):
+        lg.info("Changing quality to high for show %s" % (opts.show))
+        db.set_quality(opts.show, 1)
     
-    if('low_quality' in opts and 'force_show' in opts):
-        lg.info("Changing quality to low for show %s" % (opts['force_show']))
-        db.set_quality(opts['force_show'], 0)
+    if(opts.low_quality and opts.show):
+        lg.info("Changing quality to low for show %s" % (opts.show))
+        db.set_quality(opts.show, 0)
     
-    if('force_id' in opts and 'force_show' in opts):
-        lg.info("Forcing new id %s for show %s" % (opts['force_id'], opts['force_show']))
-        db.update_series_id(opts['force_show'], opts['force_id'])
+    if(opts.force_id and opts.show):
+        lg.info("Forcing new id %s for show %s" % (opts.force_id, opts.show))
+        db.update_series_id(opts.show, opts.force_id)
     
 
 #####################################################################################
 # Functions to retrieve configs, episodelists etc
 #####################################################################################
 
-def get_config_file(filename):
-    opts = {}
-    config = ConfigParser.ConfigParser()
-    config.read(filename)
-    
-    # Attempt to get values from config file
-    try:
-        opts['sb_db_file'] = config.get("options", "sb_db_file")
-    except:
-        opts['sb_db_file'] = 'spiderbro.db'
-    try:
-        opts['use_whole_lib'] = config.getboolean("options", "scan_all_shows_xbmc")
-    except:
-        opts['use_whole_lib'] = False
-    try:
-        opts['polite'] = config.getboolean("options", "polite")
-    except:
-        opts['polite'] = False
-    try:
-        opts['polite_value'] = config.get("options", "polite_value")
-    except:
-        opts['polite_value'] = 5
-    try:
-        opts['force_learn'] = config.getboolean("options", "force_learn")
-    except:
-        opts['force_learn'] = False
-    try:
-        opts['tv_dir'] = config.get("options", "tv_dir")
-    except:
-        opts['tv_dir'] = "/media/twoTB1/videos/tv/"
-    try:
-        opts['shows_file'] = config.get("options", "shows_file")
-    except:
-        opts['shows_file'] = None
-    try:
-        opts['log_dir'] = config.get("options", "log_dir")
-    except:
-        opts['log_dir'] = "/home/gom/log"
-    try:
-        opts['use_debug_logging'] = config.getboolean("options", "use_debug_logging")
-    except:
-        opts['use_debug_logging'] = False
-    try:
-        opts['use_mysql'] = config.getboolean("options", "use_mysql")
-    except:
-        opts['use_mysql'] = False
-    try:
-        opts['host'] = config.get("options", "host")
-    except:
-        opts['host'] = None
-    try:
-        opts['user'] = config.get("options", "user")
-    except:
-        opts['user'] = None
-    try:
-        opts['passw'] = config.get("options", "passw")
-    except:
-        opts['passw'] = None
-    try:
-        opts['schema'] = config.get("options", "schema")
-    except:
-        opts['schema'] = None
-    try:
-        opts['xbmc_sqlite_db'] = config.get("options", "xbmc_sqlite_db")
-    except:
-        opts['xbmc_sqlite_db'] = "test.db"
-    try:
-        opts['use_filerenamer'] = config.getboolean("options", "use_filerenamer")
-    except:
-        opts['use_filerenamer'] = False
-    
-    return opts
 
 def get_series_id(series_name, op):
     l = logging.getLogger("spiderbro")
@@ -598,108 +530,11 @@ def get_episode_list(series, o):
 
     return ep_list, ended, highest_season
 
-def get_params(args):
-    switches = ['--help', '--learn', '--polite', '--force_show', '--use_xbmc', '--verbose', "--force-id", "--high-quality", "--low-quality", "--clear-cache",
-                '-h', '-l', '-p', '-s', '-v', '-x', "-id", "-hq", "-lq", "-cc"]
-    opts = {}
-    if len(args) > 1:
-        for i in range(len(args)):
-            if args[i] in switches:
-                
-                # --CLEAR-CACHE
-                if(args[i] == "--clear-cache" or args[i] == "-cc"):
-                    opts['clear_cache'] = True
-                
-                # --HQ
-                if(args[i] == "--high-quality" or args[i] == "-hq"):
-                    opts['high_quality'] = True
-                
-                # --LQ
-                if(args[i] == "--low-quality" or args[i] == "-lq"):
-                    opts['low_quality'] = True
-                
-                # --LEARN
-                if(args[i] == "--learn" or args[i] == "-l"):
-                    opts['force_learn'] = True
-                
-                # --USE_DEBUG_LOGGING
-                if(args[i]== "--verbose" or args[i]== "-v"):
-                    opts['use_debug_logging'] = True
-
-                # --USE_XBMC
-                if(args[i]== "--use_xbmc" or args[i]== "-x"):
-                    opts['use_whole_lib'] = True
-
-                # --SHOW
-                if(args[i] == "--show" or args[i] == "-s"):
-                    try:
-                        if(args[i+1] not in switches):
-                            opts['force_show'] = args[i+1]
-                            opts['use_whole_lib'] = False
-                        else:
-                            print "please supply value for show to force"
-                            sys.exit()
-                    except:
-                        print "please supply show to force"
-                        sys.exit()
-                
-                # --FORCE-ID 
-                if(args[i] == "--force-id" or args[i] == "-id"):
-                    try:
-                        if(args[i+1] not in switches):
-                            opts['force_id'] = args[i+1]
-                        else:
-                            print "please supply value for id to force"
-                            sys.exit()
-                    except:
-                        print "please supply value for id to force"
-                        sys.exit()
-
-                # --POLITE
-                if(args[i] == "--polite" or args[i] == "-p" ):
-                    try:
-                        if(args[i+1] not in switches):
-                            opts['polite_value'] = int(args[i+1])
-                            opts['polite'] = True
-                        else:
-                            print "please supply integer value for polite wait period"
-                            sys.exit()
-                    except:
-                        print "please supply polite param in the form of an integer"
-                        sys.exit()
-                
-                # --HELP
-                if(args[i]== "--help" or args[i]== "-h"):
-                    print "Usage:"
-                    print "spiderBro.py"
-                    print "Options:"
-                    
-                    print "\t--learn or -l"
-                    print "\t\t forces spiderBro to mark all episodes it cannot find in db (usual behaviour is to ignore ones from current season)"
-                    
-                    print "\t--polite or -p"
-                    print "\t\t forces spiderBro to wait n seconds before opening a url (to prevent site admins from banning you for wasting their bandwidth)"
-                    
-                    print "\t--show or -s"
-                    print "\t\t Forces scan of only show X (will add new shows to library if not in current library)"
-
-                    print "\t--verbose or -v"
-                    print "\t\t Turns on debug logging"
-
-                    print "\t--usexbmc or -x"
-                    print "\t\t Uses entire xbmc tv shows library"
-
-                    print "\t--help or -h"
-                    print "\t\tPrint help and exit"
-                    sys.exit()
-
-    return opts
-
 def get_sb_log(o):
     start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
     setupLogger()
     l = logging.getLogger("spiderbro")
-    if (o['use_debug_logging'] == True):
+    if (o.debug_logging == True):
         l.setLevel(logging.DEBUG)
     else:
         l.setLevel(logging.INFO)
@@ -708,7 +543,7 @@ def get_sb_log(o):
     handler_stream.setFormatter(formatter)
     handler_stream.setLevel(logging.CRITICAL)
     l.addHandler(handler_stream)
-    handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o['log_dir'], start_time))
+    handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o.log_dir, start_time))
     handler_file.setFormatter(formatter)
     l.addHandler(handler_file)
     #l.info("Initiating Automatic Torrent Download [beep boop boop beep]")
@@ -752,7 +587,7 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
     l = logging.getLogger('spiderbro')
     d = db_manager()
     dir_id = normalize_series_name(series_name)
-    dir = opts['tv_dir'] + dir_id
+    dir = opts.tv_dir + dir_id
 
     
     is_high_quality = d.get_show_high_quality(series_name)
@@ -775,14 +610,14 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
             for site_ctor in search_list:
                 if not found:
                     for mk_ctor in masks_list:
-                        if opts['polite']: time.sleep(opts['polite_value'])
+                        if opts.polite: time.sleep(opts.polite_value)
                         site = site_ctor()
                         try:
                             url = site.search(series_name, s, e, mk_ctor, ignore_tags, is_high_quality)
                             if url:
                                 l.info("\t\tFound torrent: %s" % url)
                                 save_dir = dir
-                                if(opts["use_filerenamer"]):
+                                if(opts.use_file_renamer):
                                     save_dir = dir + "s" + s + "e" + e
                                 dict = {'url':url, "save_dir":save_dir, 'showname':series_name, "season":s, "episode":e}
                                 dl_these.append(dict)
@@ -797,7 +632,8 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
             if not found:
                 #check episode is not in current season, do not search again if so
                 ep_season = int(s)
-                if ((ep_season < highest_season) or (opts['force_learn']) or ended):
+                # something goes weird here; opts.force_learn always evaluates as True using 'or opts.force_learn' - why?
+                if ((ep_season < highest_season) or ended or opts.force_learn == True):
                     l.info("Cannot find torrent for: %s season %s episode %s - skipping this in future" % (series_name, s, e))
                     d.add_to_urls_seen(series_name, s, e, "None", "None")
             l.info("")
@@ -810,11 +646,11 @@ def log_debug_info(o):
     l = logging.getLogger("spiderbro")
     l.debug("")
     l.debug("Using params:")
-    sopts = o.keys()
-    sopts.sort()
-    for k in sopts:
-        l.debug("%s: %s" % (k, o[k]))
-    l.debug("")
+    #sopts = o.keys()
+    #sopts.sort()
+    #for k in sopts:
+        #l.debug("%s: %s" % (k, o[k]))
+    #l.debug("")
 
 #####################################################################################
 # Deferred callback function to be called when an error is encountered
@@ -854,17 +690,15 @@ def on_connect_success(result):
     dl = defer.DeferredList(init_list)
     dl.addCallback(dl_finish)
 
+#####################################################################################
+# Deferred callback function for clean exit
+#####################################################################################
 
-def setup_db_manager(opts):
-    d = db_manager()
+def dl_finish(result):
+    l = logging.getLogger('spiderbro')
+    l.info("All deferred calls have fired, exiting program...")
+    client.disconnect()
+    # Stop the twisted main loop and exit
+    reactor.stop()
 
-    if("sb_db_file" in opts):
-        d.init_sb_db(opts['sb_db_file'])
-    else:
-        d.init_sb_db('spiderbro.db')
-
-    if(opts["use_mysql"]):
-        d.xbmc_init_mysql(opts["host"], opts["user"], opts["passw"], opts["schema"])
-    else:
-        d.xbmc_init_sqlite(opts["xbmc_sqlite_db"])
 
