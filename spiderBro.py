@@ -27,7 +27,6 @@ socket.setdefaulttimeout(10)
 #################################################################################################################
 
 opts = configure_all()
-if opts.show: opts.all = False
 
 #################################################################################################################
 # Set up the logger to print out errors
@@ -63,7 +62,7 @@ shows_list = [val for val in shows_list if val not in ignore_list]
 
 if(opts.all):
     #
-    # if USE_WHOLE_LIB, we get the complete list of shows from xbmc, minus the finished shows (if any)
+    # if ALL, we get the complete list of shows from xbmc, minus the finished shows (if any)
     #
     log.info("Scanning entire XBMC library, this could take some time...")
 
@@ -74,7 +73,7 @@ if(opts.all):
 
 else:
     #
-    # if FORCE_SHOW, get specified show
+    # if SHOW, get specified show
     #
     if(opts.show):
         hunt_eps(opts.show, opts, search_list, s_masks, e_masks, ignore_taglist)

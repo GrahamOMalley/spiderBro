@@ -378,26 +378,22 @@ def configure_all():
 
     parser.set_defaults(**defaults)
     args = parser.parse_args(remaining_argv)
-    print args
+    if args.show: args.all = False
     return args
 
 def setup_db_manager(opts):
-    d = db_manager()
-
-    if(opts.db_file):
-        d.init_sb_db(opts.db_file)
-    else:
-        d.init_sb_db('spiderbro.db')
-
-    if(opts.mysql):
-        d.xbmc_init_mysql(opts.host, opts.user, opts.pwd, opts.schema) 
-    else: 
-        d.xbmc_init_sqlite(opts.xbmc_sqlite_db) 
-    db_do_opts(opts)
-
-def db_do_opts(opts):
     lg = logging.getLogger('spiderbro')
     db = db_manager()
+
+    if(opts.db_file):
+        db.init_sb_db(opts.db_file)
+    else:
+        db.init_sb_db('spiderbro.db')
+
+    if(opts.mysql):
+        db.xbmc_init_mysql(opts.host, opts.user, opts.pwd, opts.schema) 
+    else: 
+        db.xbmc_init_sqlite(opts.xbmc_sqlite_db) 
 
     if(opts.clear_cache and opts.show):
         lg.info("Clearing db cache for show %s" % (opts.show))
@@ -638,11 +634,12 @@ def log_debug_info(o):
     l = logging.getLogger("spiderbro")
     l.debug("")
     l.debug("Using params:")
-    #sopts = o.keys()
-    #sopts.sort()
-    #for k in sopts:
-        #l.debug("%s: %s" % (k, o[k]))
-    #l.debug("")
+    dic = vars(o)
+    sopts = dic.keys()
+    sopts.sort()
+    for k in sopts:
+        l.debug("%s: %s" % (k, dic[k]))
+    l.debug("")
 
 #####################################################################################
 # Deferred callback function to be called when an error is encountered
