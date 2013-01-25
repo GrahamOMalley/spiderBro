@@ -63,7 +63,6 @@ class NNN:
 #####################################################################################
 # Searches
 #####################################################################################
-
 class base_search:
     def __init__(self):
         self.name = "Base Search Class"
@@ -335,6 +334,9 @@ class btjunkiesearch(base_search):
             lg.debug("\t\tValidation FAILED: good <= fake (good: %s fake: %s)" % (good, fake))
             return False
 
+#################################################################################################################
+# Config
+#################################################################################################################
 def configure_all():
     # Set up config file
     conf_parser = argparse.ArgumentParser(add_help=False)
@@ -379,9 +381,6 @@ def configure_all():
     print args
     return args
 
-#################################################################################################################
-# 
-#################################################################################################################
 def setup_db_manager(opts):
     d = db_manager()
 
@@ -396,9 +395,6 @@ def setup_db_manager(opts):
         d.xbmc_init_sqlite(opts.xbmc_sqlite_db) 
     db_do_opts(opts)
 
-#################################################################################################################
-# force database items from params
-#################################################################################################################
 def db_do_opts(opts):
     lg = logging.getLogger('spiderbro')
     db = db_manager()
@@ -423,7 +419,6 @@ def db_do_opts(opts):
 #####################################################################################
 # Functions to retrieve configs, episodelists etc
 #####################################################################################
-
 
 def get_series_id(series_name, op):
     l = logging.getLogger("spiderbro")
@@ -567,10 +562,6 @@ def get_shows_from_file(fname):
         l.error("Cannot open shows file, exiting")
         sys.exit()
 
-#####################################################################################
-# The function that actually grabs our episodes
-#####################################################################################
-
 def normalize_series_name(name):
     dir_id = name
     dir_id = str.lower(dir_id)
@@ -582,7 +573,9 @@ def normalize_series_name(name):
     dir_id = dir_id.replace(" ", "_") 
     return dir_id
     
-
+#####################################################################################
+# The function that actually grabs our episodes
+#####################################################################################
 def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
     l = logging.getLogger('spiderbro')
     d = db_manager()
@@ -641,7 +634,6 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
 #####################################################################################
 # Print out some debugging info about params
 #####################################################################################
-
 def log_debug_info(o):
     l = logging.getLogger("spiderbro")
     l.debug("")
@@ -655,7 +647,6 @@ def log_debug_info(o):
 #####################################################################################
 # Deferred callback function to be called when an error is encountered
 #####################################################################################
-
 def on_connect_fail(result):
     l = logging.getLogger('spiderbro')
     l.info("Connection failed!")
@@ -665,7 +656,6 @@ def on_connect_fail(result):
 #####################################################################################
 # Deferred callback function called when we connect
 #####################################################################################
-
 def on_connect_success(result):
     d = db_manager()
     l = logging.getLogger('spiderbro')
@@ -693,12 +683,10 @@ def on_connect_success(result):
 #####################################################################################
 # Deferred callback function for clean exit
 #####################################################################################
-
 def dl_finish(result):
     l = logging.getLogger('spiderbro')
     l.info("All deferred calls have fired, exiting program...")
     client.disconnect()
     # Stop the twisted main loop and exit
     reactor.stop()
-
 
