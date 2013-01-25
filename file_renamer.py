@@ -2,11 +2,11 @@
 import sys 
 import os
 import shutil
-import unicodedata
 import sqlite3
 import subprocess
 import fnmatch
 import logging
+import gomXBMCTools
 
 dbfile = "/home/gom/code/python/spider_bro/spiderbro.db" 
 target = "/media/tv2/"
@@ -14,14 +14,12 @@ target = "/media/tv2/"
 logging.basicConfig(filename='/home/gom/log/sb_file_renamer.log',level=logging.DEBUG)
 logging.info('')
 logging.info('File Renamer Started...')
-
 logging.info('Target Dir to write files is: %s' % target)
 
 name = sys.argv[2]
 path = sys.argv[3]
 logging.info('Torrent name is: %s' % sys.argv[2])
 logging.info('Torrent save path is: %s' % sys.argv[3])
-
 
 def is_video_file(filename, extensions=['.avi', '.mkv', '.mp4', '.flv', '.divx', '.mpg', '.mpeg', '.wmv']):
     return any(filename.lower().endswith(e) for e in extensions)
@@ -52,6 +50,7 @@ if (not os.path.exists(dbfile)):
     logging.info("cannot find db...")
     sys.exit()
 else:
+    files_to_copy = []
     # spiderbro stores path
     conn = sqlite3.connect(dbfile)
     cur = conn.cursor()
@@ -88,27 +87,12 @@ else:
                 for vfilename in filter(is_video_file, files):
                     logging.info( "FILE TO COPY IS: ", vfilename)
                     # set file to the correct file 
-                    file_to_copy= ( os.path.join(root, vfilename))
+                    files_to_copy.append( os.path.join(root, vfilename))
 
         #  use creation logic from backup_tv.py to mv and rename episode
-
         s = "0" + str(c[1]) if(int(c[1])<10) else str(c[1])
-        e = "e0" + str(c[2]) if(int(c[2])<10) else "e" + str(c[2])
         season_dir = "season_" + s
-        series_name = str.lower(str(c[0]))
-        series_name = series_name.replace("::", "")
-        series_name = series_name.replace(": ", " ")
-        series_name = series_name.replace(":", " ")
-        series_name = "".join(ch for ch in series_name if ch not in ["!", "'", ":", "(", ")", ".", ","])
-        series_name = series_name.replace("&", "and")
-        series_name = series_name.replace(" ", "_") 
-
-        # unicode screws up some shows, convert to latin-1 ascii
-        series_name = unicode(series_name, "latin-1")
-        unicodedata.normalize('NFKD', series_name).encode('ascii','ignore')
-
-        fileName, fileExtension = os.path.splitext(file_to_copy)
-        ftarget = target + series_name  + "/" + season_dir + "/" + series_name + "_s"+ s + e + fileExtension
+        series_name = gomXBMCTools.normaliseTVShowName(str(c[0]))
 
         if not os.path.isdir(target + series_name): 
             logging.info( "\tDirectory: ", series_name, " does not exist, creating...")
@@ -117,8 +101,13 @@ else:
         if not os.path.isdir(target + series_name + "/" + season_dir):
             logging.info( "\tDirectory: ", season_dir, " does not exist, creating...")
             os.mkdir(target + series_name + "/" + season_dir)
+       
+        for f in files_to_copy:
+            e = "e0" + str(c[2]) if(int(c[2])<10) else "e" + str(c[2])
+            if( c[2] == -1): e = gomXBMCTools.getEpisodeNumFromFilename(f, s)
+            fileName, fileExtension = os.path.splitext(f)
+            ftarget = target + series_name  + "/" + season_dir + "/" + series_name + "_s"+ s + e + fileExtension
+            logging.info( "\tCopying ", f, " to ", ftarget)
+            shutil.copy2(f, ftarget)
         
-        logging.info( "\tCopying ", file_to_copy, " to ", ftarget)
-        shutil.copy2(file_to_copy, ftarget)
-
-        shutil.rmtree(path)
+        #shutil.rmtree(path)
