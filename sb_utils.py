@@ -537,7 +537,6 @@ def get_sb_log(o):
     handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o.log_dir, start_time))
     handler_file.setFormatter(formatter)
     l.addHandler(handler_file)
-    #l.info("Initiating Automatic Torrent Download [beep boop boop beep]")
     l.info("SpiderBro, SpiderBro")
     l.info("Finding episodes for your shows")
     log_debug_info(o)
