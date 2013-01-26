@@ -30,8 +30,6 @@ db = db_manager()
 
 # If using the shows file, open and get shows list
 shows_list = []
-if(opts.shows_file and not opts.all and opts.show):
-    shows_list = get_shows_from_file(opts.shows_file)
 
 # Get the list of shows that are complete so we can safely ignore them
 ignore_list = db.get_ignore_list()

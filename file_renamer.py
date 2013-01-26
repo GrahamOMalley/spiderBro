@@ -63,21 +63,25 @@ if (not os.path.exists(dbfile)):
     logger.info("cannot find db...")
     sys.exit()
 else:
-    print "Tryna filerename"
     files_to_copy = []
     # spiderbro stores path
     conn = sqlite3.connect(dbfile)
     cur = conn.cursor()
     sname = path
     select = "select * from urls_seen where savepath like \"%" + sname + "%\""
-    print select
-    logger.info( "Trying to execute: %s" % (select))
+    logger.info( "Retrieving ep info with query: %s" % (select))
     for c in(cur.execute(select)):
         file_path = path+"/"+name
         file_to_copy = path+"/"+name
         logger.info("Filepath: %s" % (file_path))
-        if(os.path.isdir(file_path)):
+        if(not os.path.isdir(file_path)):
+            # we just have a single video file, copy
+            files_to_copy.append(file_path)
+        else:
+            # we have a dir and are not sure whats in it, do some file manipulation before copying
+
             # 'Sample' files screw up logic if they are not deleted first
+            logger.info( "Checking for sample...")
             for root, dirs, files in os.walk(file_path):
                 for dirname in fnmatch.filter(dirs, "*Sample*"):
                     logger.info( "Sample dir detected, deleting... ", dirname)
@@ -98,11 +102,11 @@ else:
                             # TODO: implement unzip
                             logger.info( "trying to unzip")
             
+            logger.info( "Checking for video files...")
             # walk dir, find any video files 
             for root, dirs, files in os.walk(file_path):
                 for vfilename in filter(is_video_file, files):
-                    logger.info( "FILE TO COPY IS: %s" % (vfilename))
-                    # set file to the correct file 
+                    logger.info( "Found file: %s" % (vfilename))
                     files_to_copy.append( os.path.join(root, vfilename))
 
         #  use creation logic from backup_tv.py to mv and rename episode
@@ -129,5 +133,6 @@ else:
                 shutil.copy2(f, ftarget)
             else:
                 rmdir = False
-        if rmdir: 
+        if rmdir:
+            logger.info("Cleaning up temporary dir %s" % (path))
             shutil.rmtree(path)
