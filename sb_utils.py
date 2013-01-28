@@ -522,7 +522,7 @@ def get_episode_list(series, o):
     return ep_list, ended, highest_season
 
 def get_sb_log(o):
-    start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
+    start_day = str(datetime.today()).split(" ")[0]
     setupLogger()
     l = logging.getLogger("spiderbro")
     if (o.debug_logging == True):
@@ -534,9 +534,10 @@ def get_sb_log(o):
     handler_stream.setFormatter(formatter)
     handler_stream.setLevel(logging.CRITICAL)
     l.addHandler(handler_stream)
-    handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o.log_dir, start_time))
+    handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o.log_dir, start_day))
     handler_file.setFormatter(formatter)
     l.addHandler(handler_file)
+    l.info("")
     l.info("SpiderBro, SpiderBro")
     l.info("Finding episodes for your shows")
     log_debug_info(o)
@@ -659,7 +660,7 @@ def on_connect_success(result):
     l.info("Connection to deluge was successful, result code: %s" % result)
     # need a callback for when torrent added completes
     def add_tor(key, val):
-        l.info("Added torrent url to deluge: %s" % (val))
+        l.info("---> Added Torrent: %s" % (val))
     
     # TODO: get rid of this nasty global variable
     for tp in dl_these:

@@ -10,11 +10,12 @@ import logging
 import gomXBMCTools
 
 dbfile = "/home/gom/code/python/spider_bro/spiderbro.db" 
-logdir= "/home/gom/code/python/spider_bro/log" 
+logdir= "/home/gom/log/spiderbro"
 target = "/media/tv2/"
 name = sys.argv[2]
 path = sys.argv[3]
 start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
+start_day = str(datetime.today()).split(" ")[0]
 
 logger = logging.getLogger('filerenamer')
 formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
@@ -22,7 +23,7 @@ handler_stream = logging.StreamHandler()
 handler_stream.setFormatter(formatter)
 handler_stream.setLevel(logging.CRITICAL)
 logger.addHandler(handler_stream)
-handler_file = logging.FileHandler('%s/filerenamer_%s.log' % (logdir, start_time))
+handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (logdir, start_day))
 handler_file.setFormatter(formatter)
 logger.addHandler(handler_file)
 logger.setLevel(logging.INFO)
@@ -129,7 +130,7 @@ else:
             if( e != "e-1" ):
                 fileName, fileExtension = os.path.splitext(f)
                 ftarget = target + series_name  + "/" + season_dir + "/" + series_name + "_s"+ s + e + fileExtension
-                logger.info( "\tCopying %s to %s" % (f, ftarget))
+                logger.info( "--->  Copying File: %s to %s" % (f, ftarget))
                 shutil.copy2(f, ftarget)
             else:
                 rmdir = False
