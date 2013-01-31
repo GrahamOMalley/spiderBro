@@ -459,11 +459,11 @@ def get_episode_list(series, o):
     d = db_manager()
     l = logging.getLogger("spiderbro")
     l.info("Looking for eps for: %s" % (series_name))
+    # get the series id from db or web
+    series_id = get_series_id(series, o)
     try:
 
-        # get the series id from db or web
-        series_id = get_series_id(series, o)
-
+        l.debug("Using thetvdb ID: %s" % (series_id))
         # now get the info for the series
         data = BeautifulSoup(urllib2.urlopen("http://thetvdb.com/data/series/%s/all/" % str(series_id))).data
         if(data.series.status.string == "Ended"):
@@ -484,7 +484,7 @@ def get_episode_list(series, o):
                 except:
                     pass
     except:
-        l.error("\tCould not get episode list from thetvdb (timeout?)")
+        l.error("\tCould not get episode list from thetvdb (timeout or invalid ID? Using ID: %s)" % (series_id))
         l.error("")
         return [], False, highest_season
 
