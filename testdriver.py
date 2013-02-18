@@ -1,5 +1,7 @@
 #! /usr/bin/env python
 from sb_utils import *
+import sys
+
 if __name__ == "__main__":
     """
         quick little testing script to see behaviour of search classes and test individual episodes/seasons
@@ -14,7 +16,7 @@ if __name__ == "__main__":
 
     #base = base_search()
     #base.search("Game of Thrones", "1", "3", sNeN, tags, True)
-
+    
     p = piratebaysearch()
     result = p.search("Girls", "2", "2", sNeN, tags, True)
     if result: log.info("\t\tFound Torrent: %s" % result)

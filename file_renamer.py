@@ -12,6 +12,7 @@ import gomXBMCTools
 dbfile = "/home/gom/code/python/spider_bro/spiderbro.db" 
 logdir= "/home/gom/log/spiderbro"
 target = "/media/tv2/"
+id = sys.argv[1]
 name = sys.argv[2]
 path = sys.argv[3]
 start_time = str(datetime.today()).split(".")[0].replace(" ", "_")
@@ -31,6 +32,7 @@ logger.info('')
 logger.info('File Renamer Started...')
 logger.info('Target Dir to write files is: %s' % target)
 
+logger.info('Torrent id is: %s' % sys.argv[1])
 logger.info('Torrent name is: %s' % sys.argv[2])
 logger.info('Torrent save path is: %s' % sys.argv[3])
 #sys.exit()
@@ -137,3 +139,43 @@ else:
         if rmdir:
             logger.info("Cleaning up temporary dir %s" % (path))
             shutil.rmtree(path)
+
+        from deluge.ui.client import client
+        from twisted.internet import reactor, defer
+        from deluge.log import setupLogger
+        setupLogger()
+
+        def printSuccess(dresult, is_success, smsg):
+            print "[+]", smsg
+
+        def printError(emsg):
+            print "[e]", emsg
+
+        def printReport(rresult):
+            print rresult
+
+        def dl_finish(result):
+            print "All deferred calls have fired, exiting program..."
+            client.disconnect()
+            # Stop the twisted main loop and exit
+            reactor.stop()
+
+        def on_connect_fail(result):
+            print "Connection failed!"
+            print "result:", result
+
+        def on_connect_success(result):
+            print "Connection was successful!"
+            torrent_id = id
+            tlist = []
+            successmsg = " Removed"
+            errormsg = "Error removing"
+            do_remove_data = False
+            tlist.append(client.core.remove_torrent(torrent_id, do_remove_data).addCallbacks(printSuccess, printError, callbackArgs = (True, successmsg), errbackArgs = (errormsg)))
+            defer.DeferredList(tlist).addCallback(printReport)
+            defer.DeferredList(tlist).addCallback(dl_finish)
+
+        d = client.connect()
+        d.addCallback(on_connect_success)
+        d.addErrback(on_connect_fail)
+        reactor.run()
