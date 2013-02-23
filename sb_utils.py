@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 import urllib2
+import gomXBMCTools
 
 from BeautifulSoup import BeautifulSoup
 from datetime import date
@@ -18,6 +19,8 @@ from twisted.internet import defer
 from twisted.internet import reactor
 
 from db_manager import db_manager
+
+
 
 # nasty global
 dl_these = []
@@ -118,7 +121,7 @@ class base_search:
         if(not is_torrent.match(link)):
             return False
         else:
-            lg.debug('\t\tValidating %s' % (link))
+            lg.debug('\t\tValidating %s' % (gomXBMCTools.getTorrentNameFromMagnetLink(link)))
             
         if (is_high_q and not (("720p" in link.lower()) or ("1080p" in link.lower()))): 
             lg.debug("\t\t\tValidation FAILED: Quality is HighQ but 720p not found in torrent")
@@ -140,10 +143,12 @@ class base_search:
                 return True
         else:
             # we are searching for an episode
-            if (s_ep_str in link.lower() and  self.delimiter.join(series.split(" ")).lower() in link.lower()):
-                return True
-            else:
-                lg.debug("\t\t\tValidation FAILED: s_ep_str %s or %s not found in link title" % (s_ep_str, self.delimiter.join(series.split(" ")).lower()))
+            delims = [self.delimiter, "."]
+            for d in delims:
+                if (s_ep_str in link.lower() and  d.join(series.split(" ")).lower() in link.lower()):
+                    return True
+                else:
+                    lg.debug("\t\t\tValidation FAILED: s_ep_str %s or %s not found in link title" % (s_ep_str, d.join(series.split(" ")).lower()))
 
         
         return False
