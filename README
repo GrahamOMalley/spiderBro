@@ -1,6 +1,6 @@
 This python script takes a list of tv shows, scrapes thetvdb.com and the xbmc mysql db, and creates a list of missing episodes. 
 
-It then uses BeautifulSoup to search the pirate bay and btjunkie for these episodes, and adds them to deluge via the deluge rpc interface.
+It then uses BeautifulSoup to search various sitesfor these episodes, and adds them to deluge via the deluge rpc interface.
 
 Spiderbro can be configured to use either an xbmc sqlite db or an xbmc mysql db - future versions may use the xbmc rpc interface
 

@@ -20,7 +20,7 @@ from twisted.internet import reactor
 
 from db_manager import db_manager
 
-
+import unittest
 
 # nasty global
 dl_these = []
@@ -213,7 +213,7 @@ class piratebaysearch(base_search):
         return "^magnet"
 
     def get_search_url(self, name, maskval):
-        return "http://thepiratebay.se/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
+        return "http://thepiratebay.si/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
     
     def validate_page(self, tor):
         return True
@@ -221,7 +221,7 @@ class piratebaysearch(base_search):
         seeds_reg = re.compile("Seeders:</dt>\n<dd>[0-9]{1,9}")
         lg = logging.getLogger('spiderbro')
         lg.debug("\t\tDoing piratebay page validation")
-        turl = tor.replace("http://torrents.thepiratebay.se", "http://thepiratebay.se/torrent")
+        turl = tor.replace("http://torrents.thepiratebay.si", "http://thepiratebay.si/torrent")
         resp = urllib2.urlopen(turl)
         html = resp.read()
         data = BeautifulSoup(html)
@@ -692,3 +692,5 @@ def dl_finish(result):
     # Stop the twisted main loop and exit
     reactor.stop()
 
+if __name__ == '__main__':
+    unittest.main()

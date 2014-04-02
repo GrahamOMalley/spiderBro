@@ -11,7 +11,7 @@ import gomXBMCTools
 
 dbfile = "/home/gom/code/python/spider_bro/spiderbro.db" 
 logdir= "/home/gom/log/spiderbro"
-target = "/media/tv2/"
+target = "/media/nasGom/video/tv/"
 id = sys.argv[1]
 name = sys.argv[2]
 path = sys.argv[3]
@@ -128,14 +128,20 @@ else:
         rmdir = True
         for f in files_to_copy:
             e = "e0" + str(c[2]) if(int(c[2])<10) else "e" + str(c[2])
-            if( c[2] == -1): e = gomXBMCTools.getEpisodeNumFromFilename(f, s)
+            # TODO: this is broken
+            if( c[2] == -1): 
+                e = gomXBMCTools.getEpisodeNumFromFilename(f, s)
+
             if( e != "e-1" ):
                 fileName, fileExtension = os.path.splitext(f)
                 ftarget = target + series_name  + "/" + season_dir + "/" + series_name + "_s"+ s + e + fileExtension
                 logger.info( "--->  Copying File: %s to %s" % (f, ftarget))
                 shutil.copy2(f, ftarget)
             else:
-                rmdir = False
+                logger.info("Copying file without renaming: %s" % (f))
+                ftarget = target + series_name  + "/" + season_dir + "/" 
+                shutil.copy2(f, ftarget)
+                #rmdir = False
         if rmdir:
             logger.info("Cleaning up temporary dir %s" % (path))
             shutil.rmtree(path)

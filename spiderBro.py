@@ -38,7 +38,6 @@ shows_list = [val for val in shows_list if val not in ignore_list]
 #################################################################################################################
 # Main
 #################################################################################################################
-
 if(opts.all):
     #
     # if ALL, we get the complete list of shows from xbmc, minus the finished shows (if any)
