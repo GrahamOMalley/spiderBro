@@ -9,6 +9,7 @@ import time
 import traceback
 import urllib2
 import gomXBMCTools
+import json
 
 from BeautifulSoup import BeautifulSoup
 from datetime import date
@@ -91,8 +92,9 @@ class base_search:
                 response = urllib2.urlopen(search_url)
                 search_page = response.read()
             except:
-                print "Couldn't open %s" % search_url
-                return ""
+                lg.error("Couldn't open %s" % search_url)
+                lg.error("Shutting down sb, check that url is accessible")
+                sys.exit()
             sps = BeautifulSoup(search_page)
             links = sps.findAll('a', href=re.compile(self.get_links_from_main_page_re()))
             for l in links:
@@ -213,7 +215,7 @@ class piratebaysearch(base_search):
         return "^magnet"
 
     def get_search_url(self, name, maskval):
-        return "http://thepiratebay.si/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
+        return "http://pirateproxy.net/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
     
     def validate_page(self, tor):
         return True
@@ -221,7 +223,7 @@ class piratebaysearch(base_search):
         seeds_reg = re.compile("Seeders:</dt>\n<dd>[0-9]{1,9}")
         lg = logging.getLogger('spiderbro')
         lg.debug("\t\tDoing piratebay page validation")
-        turl = tor.replace("http://torrents.thepiratebay.si", "http://thepiratebay.si/torrent")
+        turl = tor.replace("http://torrents.pirateproxy.net", "http://pirateproxy.net/torrent")
         resp = urllib2.urlopen(turl)
         html = resp.read()
         data = BeautifulSoup(html)
@@ -564,7 +566,7 @@ def get_shows_from_file(fname):
         sys.exit()
 
 def normalize_series_name(name):
-    dir_id = name
+    dir_id = str(name)
     dir_id = str.lower(dir_id)
     dir_id = dir_id.replace("::", "")
     dir_id = dir_id.replace(": ", " ")
@@ -632,10 +634,10 @@ def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
                     d.add_to_urls_seen(series_name, s, e, "None", "None")
             l.info("")
 
-#####################################################################################
-# Print out some debugging info about params
-#####################################################################################
 def log_debug_info(o):
+    """
+        Print out some debugging info about params
+    """
     l = logging.getLogger("spiderbro")
     l.debug("")
     l.debug("Using params:")
@@ -646,19 +648,38 @@ def log_debug_info(o):
         l.debug("%s: %s" % (k, dic[k]))
     l.debug("")
 
-#####################################################################################
-# Deferred callback function to be called when an error is encountered
-#####################################################################################
+def traktWatchlistScraper(username, key):
+    """
+        returns a list of shows from the watchlist of a trakt user
+    """
+
+    l = logging.getLogger("spiderbro")
+    url = "http://api.trakt.tv/user/watchlist/shows.json/"+ key +"/" + username
+    response = urllib2.urlopen(url)
+    data = json.load(response)
+    watchlist = [i["title"] for i in data]
+    l.debug("Got list of watched shows from trakt.com:")
+    for show in watchlist: l.debug(show)
+    return watchlist
+
+
+#
+# Deferred callbacks for twisted
+#
 def on_connect_fail(result):
+    """
+        Deferred callback function to be called when an error is encountered
+    """
     l = logging.getLogger('spiderbro')
     l.info("Connection failed!")
     l.info("result: %s" % result)
     sys.exit()
 
-#####################################################################################
-# Deferred callback function called when we connect
-#####################################################################################
+
 def on_connect_success(result):
+    """
+        Deferred callback function called when we connect
+    """
     d = db_manager()
     l = logging.getLogger('spiderbro')
     init_list = []
@@ -682,10 +703,10 @@ def on_connect_success(result):
     dl = defer.DeferredList(init_list)
     dl.addCallback(dl_finish)
 
-#####################################################################################
-# Deferred callback function for clean exit
-#####################################################################################
 def dl_finish(result):
+    """
+        Deferred callback function for clean exit
+    """
     l = logging.getLogger('spiderbro')
     l.info("All deferred calls have fired, exiting program...")
     client.disconnect()
