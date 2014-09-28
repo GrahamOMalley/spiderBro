@@ -8,66 +8,68 @@
 #################################################################################################################
 import socket
 from datetime import datetime
-from sb_utils import *
+from spiderBroAPI import *
 
 startTime = datetime.now()
 e_masks = [sNeN, NxN, NNN]
 s_masks = [season, series]
 ignore_taglist = ["SWESUB", "SPANISH", "GERMAN", "HBOGO"]
-#ignore_taglist = ["SWESUB", "SPANISH", "GERMAN", "WEBRIP", "HBOGO"]
-#search_list = [piratebaysearch, isohuntsearch, extratorrentsearch]
 search_list = [piratebaysearch]
 socket.setdefaulttimeout(10)
 
-# Get our config file and params
-opts = configure_all()
+# Get our config file and script arguments
+script_args = get_configuration()
 
-# Set up the logger to print out errors
-log = get_sb_log(opts)
+# Get an instance of spiderBro, tell it to search for torrents
+spider = SpiderBro(script_args, e_masks, s_masks, ignore_taglist, search_list)
+torrent_download_list = spider.get_torrent_download_list()
 
-# Set up DB_manager
-setup_db_manager(opts)
-db = db_manager()
+# Deferred callbacks for twisted
+def on_connect_fail(result):
+    """
+        Deferred callback function to be called when an error is encountered
+    """
+    l = logging.getLogger('spiderbro')
+    l.info("Connection failed!")
+    l.info("result: %s" % result)
+    sys.exit()
 
-# If using the shows file, open and get shows list
-shows_list = []
 
-# Get the list of shows that are complete so we can safely ignore them
-ignore_list = db.get_ignore_list()
-shows_list = [val for val in shows_list if val not in ignore_list]
-
-#################################################################################################################
-# Main
-#################################################################################################################
-if(opts.all):
-    # if ALL, we get the complete list of shows from xbmc, minus the finished shows (if any)
-    log.info("Scanning entire XBMC library, this could take some time...")
-    full_showlist = []
-    db_showlist = db.xbmc_get_showlist()
-    for show in db_showlist:
-        if(show[0].decode('latin-1', 'replace') not in ignore_list): full_showlist.append(show[0])
-    #TODO: add this to config file
-    get_trakt_watch_list = True
-    if(get_trakt_watch_list):
-        log.info("Looking for shows from trakt.com watchlist")
-        # get the watchlist from trakt and add
-        traktlist = traktWatchlistScraper("thegom145", "b837e9f111dcae8e279711ce929e9ef1")
-        full_showlist.extend(t for t in traktlist if t.decode('latin-1', 'replace') not in ignore_list)
-        full_showlist.sort()
-    for show in full_showlist:
-        if(show.decode('latin-1', 'replace') not in ignore_list):
-            hunt_eps(show, opts, search_list, s_masks, e_masks, ignore_taglist)
-
-else:
-    # if SHOW, get specified show
-    if(opts.show):
-        hunt_eps(opts.show, opts, search_list, s_masks, e_masks, ignore_taglist)
+def on_connect_success(result):
+    """
+        Deferred callback function called when we connect
+    """
+    d = db_manager()
+    l = logging.getLogger('spiderbro')
+    init_list = []
+    l.info("Connection to deluge was successful, result code: %s" % result)
+    # need a callback for when torrent added completes
+    def add_tor(key, val):
+        l.info("---> Added Torrent: %s" % (val))
     
-    # else EXIT
-    else:
-        log.info("No shows to download, exiting")
-        sys.exit()
+    for tp in torrent_download_list:
+        di = {'download_location':tp['save_dir']}
+        # added support for magnet links
+        if(str(tp["url"]).startswith("magnet:")):
+            df = client.core.add_torrent_magnet(tp["url"], di).addCallback(add_tor, tp["url"])
+        else:
+            df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
+        init_list.append(df)
+        #add url to database - ideally would be nice to do this in callback, but dont have info there?
+        d.add_to_urls_seen(tp['showname'], tp['season'], tp['episode'], tp['url'], tp['save_dir'])
 
+    dl = defer.DeferredList(init_list)
+    dl.addCallback(dl_finish)
+
+def dl_finish(result):
+    """
+        Deferred callback function for clean exit
+    """
+    l = logging.getLogger('spiderbro')
+    l.info("All deferred calls have fired, exiting program...")
+    client.disconnect()
+    # Stop the twisted main loop and exit
+    reactor.stop()
 
 # Connect to a daemon running on the localhost
 d = client.connect()

@@ -23,9 +23,6 @@ from db_manager import db_manager
 
 import unittest
 
-# nasty global
-dl_these = []
-
 #####################################################################################
 # Filemasks
 #####################################################################################
@@ -341,10 +338,10 @@ class btjunkiesearch(base_search):
             lg.debug("\t\tValidation FAILED: good <= fake (good: %s fake: %s)" % (good, fake))
             return False
 
-#################################################################################################################
-# Config
-#################################################################################################################
-def configure_all():
+def get_configuration():
+    """
+        read the configuration file, set opts
+    """
     # Set up config file
     conf_parser = argparse.ArgumentParser(add_help=False)
     conf_parser.add_argument("--conf_file", help="Specify config file", metavar="FILE", default="/home/gom/code/python/spider_bro/config.ini")
@@ -388,330 +385,332 @@ def configure_all():
     if args.show: args.all = False
     return args
 
-def setup_db_manager(opts):
-    lg = logging.getLogger('spiderbro')
-    db = db_manager()
+#################################################################################################################
+# SpiderBro main class
+#################################################################################################################
+class SpiderBro:
+    def __init__(self, opts, episode_masks=None, season_masks=None, ignore_taglist=None, site_search_list=None):
+        """
+        Set up logger, db_manager, configuration
+        """
+        if episode_masks is None: episode_masks = []
+        if season_masks is None: season_masks = []
+        if ignore_taglist is None: ignore_taglist = []
+        if site_search_list is None: site_search_list = []
+        self.episode_masks = episode_masks
+        self.season_masks = season_masks
+        self.ignore_taglist = ignore_taglist
+        self.site_search_list = site_search_list
 
-    if(opts.db_file):
-        db.init_sb_db(opts.db_file)
-    else:
-        db.init_sb_db('spiderbro.db')
+        self.config = opts
+        self.logger = self.setup_logger()
+        self.db = self.setup_db_manager()
+        self.download_list = []
 
-    if(opts.mysql):
-        db.xbmc_init_mysql(opts.host, opts.user, opts.pwd, opts.schema) 
-    else: 
-        db.xbmc_init_sqlite(opts.xbmc_sqlite_db) 
+    def setup_logger(self):
+        """
+        Set up all the logging paramters for SpiderBro
+        """
+        start_day = str(datetime.today()).split(" ")[0]
+        setupLogger()
+        self.logger = logging.getLogger("spiderbro")
+        if (self.config.debug_logging == True):
+            self.logger.setLevel(logging.DEBUG)
+        else:
+            self.logger.setLevel(logging.INFO)
+        formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
+        handler_stream = logging.StreamHandler()
+        handler_stream.setFormatter(formatter)
+        handler_stream.setLevel(logging.CRITICAL)
+        self.logger.addHandler(handler_stream)
+        handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (self.config.log_dir, start_day))
+        handler_file.setFormatter(formatter)
+        self.logger.addHandler(handler_file)
+        self.logger.info("")
+        self.logger.info("SpiderBro, SpiderBro")
+        self.logger.info("Finding episodes for your shows")
+        self.log_debug_info()
+        return self.logger
 
-    if(opts.clear_cache and opts.show):
-        lg.info("Clearing db cache for show %s" % (opts.show))
-        db.clear_cache(opts.show)
+    def log_debug_info(self):
+        """
+            Log some debugging info about configuration
+        """
+        self.logger.debug("")
+        self.logger.debug("Using params:")
+        dic = vars(self.config)
+        sopts = dic.keys()
+        sopts.sort()
+        for k in sopts:
+            self.logger.debug("%s: %s" % (k, dic[k]))
+        self.logger.debug("")
+
+    def setup_db_manager(self):
+        """
+        Set up the db manager based on a dictionary of options supplied by get_configuration
+        """
+        db = db_manager()
+
+        if(self.config.db_file):
+            db.init_sb_db(self.config.db_file)
+        else:
+            db.init_sb_db('spiderbro.db')
+
+        if(self.config.mysql):
+            db.xbmc_init_mysql(self.config.host, self.config.user, self.config.pwd, self.config.schema) 
+        else: 
+            db.xbmc_init_sqlite(self.config.xbmc_sqlite_db) 
+
+        if(self.config.clear_cache and self.config.show):
+            self.logger.info("Clearing db cache for show %s" % (self.config.show))
+            db.clear_cache(self.config.show)
+        
+        if(self.config.high_quality and self.config.show):
+            self.logger.info("Changing quality to high for show %s" % (self.config.show))
+            db.set_quality(self.config.show, 1)
+        
+        if(self.config.low_quality and self.config.show):
+            self.logger.info("Changing quality to low for show %s" % (self.config.show))
+            db.set_quality(self.config.show, 0)
+        
+        if(self.config.force_id and self.config.show):
+            self.logger.info("Forcing new id %s for show %s" % (self.config.force_id, self.config.show))
+            db.update_series_id(self.config.show, self.config.force_id)
+        return db
     
-    if(opts.high_quality and opts.show):
-        lg.info("Changing quality to high for show %s" % (opts.show))
-        db.set_quality(opts.show, 1)
-    
-    if(opts.low_quality and opts.show):
-        lg.info("Changing quality to low for show %s" % (opts.show))
-        db.set_quality(opts.show, 0)
-    
-    if(opts.force_id and opts.show):
-        lg.info("Forcing new id %s for show %s" % (opts.force_id, opts.show))
-        db.update_series_id(opts.show, opts.force_id)
-    
 
-#####################################################################################
-# Functions to retrieve configs, episodelists etc
-#####################################################################################
+    def get_series_id(self, series_name):
+        """
+        Get the tvdb.com series id for a given tv show
+        """
+        
+        xbmc_id = self.db.xbmc_get_series_id(series_name)
+        sb_id = self.db.get_show_info(series_name)
 
-def get_series_id(series_name, op):
-    l = logging.getLogger("spiderbro")
-    d = db_manager()
-    
-    xbmc_id = d.xbmc_get_series_id(series_name)
-    sb_id = d.get_show_info(series_name)
+        # Edge case can happen here where show in xbmc but not in sb_db, so we make sure it is inserted
+        if(xbmc_id and not sb_id):
+            self.logger.debug("No db entry found for show %s, creating default..." % series_name)
+            self.db.add_show(xbmc_id[0][0], series_name, 0)
 
-    # Edge case can happen here where show in xbmc but not in sb_db, so we make sure it is inserted
-    if(xbmc_id and not sb_id):
-        l.debug("No db entry found for show %s, creating default..." % series_name)
-        d.add_show(xbmc_id[0][0], series_name, 0)
+        # try and get series id from xbmc db first if force_id not True
+        if(xbmc_id and not ('force_id' in self.config)):
+            self.logger.debug("\t\tGot series ID from XBMC: %s" % xbmc_id[0][0])
+            return xbmc_id[0][0]
 
-    # try and get series id from xbmc db first if force_id not True
-    if(xbmc_id and not ('force_id' in op)):
-        l.debug("\t\tGot series ID from XBMC: %s" % xbmc_id[0][0])
-        return xbmc_id[0][0]
-
-    # otherwise go to sb_db
-    if sb_id:
-        sid = sb_id[0][0]
-        l.debug("\t\tGot series ID from Spiderbro Internal DB: %s" % sid)
-        return sid
-    # finally go to tvdb if all other options exhausted
-    else:
-        try:
-            page = urllib2.urlopen("http://thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
-            soup = BeautifulSoup(page)
-            sid = int(soup.data.series.seriesid.string)
-            l.debug("\t\tGot series ID from tvdb: %s" % sid)
-            d.add_show(sid, series_name, 0)
+        # otherwise go to sb_db
+        if sb_id:
+            sid = sb_id[0][0]
+            self.logger.debug("\t\tGot series ID from Spiderbro Internal DB: %s" % sid)
             return sid
-        except Exception, e:
-            l.error("Error retrieving series id: %s" % e)
-
-def get_episode_list(series, o):
-    aired_list = []
-    have_list = []
-    highest_season = 1
-    ended = False
-    series_name = series
-    d = db_manager()
-    l = logging.getLogger("spiderbro")
-    l.info("Looking for eps for: %s" % (series_name))
-    # get the series id from db or web
-    series_id = get_series_id(series, o)
-    try:
-
-        l.debug("Using thetvdb ID: %s" % (series_id))
-        # now get the info for the series
-        data = BeautifulSoup(urllib2.urlopen("http://thetvdb.com/data/series/%s/all/" % str(series_id))).data
-        if(data.series.status.string == "Ended"):
-            ended = True
-
-        # iterate through data, get list of season/episodes for show starting from 1 (0 are specials)
-        for i in data.findAll('episode', recursive=False):
-            if(i.seasonnumber.string != '0'):
-                season = i.seasonnumber.string
-                ep = i.episodenumber.string
-                try:
-                    fa = i.firstaired.string.split('-')
-                    airdate = date(int(fa[0]), int(fa[1]), int(fa[2]))
-                    # need to compare current date to air date, ignore if not aired yet
-                    if date.today() > airdate:
-                        aired_list.append((season, ep))
-                        highest_season = max(highest_season, int(i.seasonnumber.string))
-                except:
-                    pass
-    except:
-        l.error("\tCould not get episode list from thetvdb (timeout or invalid ID? Using ID: %s)" % (series_id))
-        l.error("")
-        return [], False, highest_season
-
-    try:
-        # use the mysql lib to access xbmc db, cross check episode lists
-        l = d.xbmc_get_eps_for_show(series_name)
-        for i in l: have_list.append(i)
-
-        # create new db con to torrents db, populate from here aswell
-        l = d.get_eps_from_self(series_name)
-        for s, e in l: have_list.append((str(s), str(e)))
+        # finally go to tvdb if all other options exhausted
+        else:
+            try:
+                page = urllib2.urlopen("http://thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
+                soup = BeautifulSoup(page)
+                sid = int(soup.data.series.seriesiself.db.string)
+                self.logger.debug("\t\tGot series ID from tvdb: %s" % sid)
+                self.db.add_show(sid, series_name, 0)
+                return sid
+            except Exception, e:
+                self.logger.error("Error retrieving series id: %s" % e)
 
 
-    except ValueError as v:
-        l.error("Database error?")
-        l.error(str(v))
-        sys.exit()
-
-    have_s = list(set([h[0] for h in have_list]))
-    aired_s = list(set([a[0] for a in aired_list]))
-    if(ended):
-        seas = [c for c in aired_s if c not in have_s]
-    else:
-        seas = [c for c in aired_s if((c not in have_s) and (int(c) < highest_season))]
-
-    have_seas = [val for val in have_list if val[1] == "-1"]
-    ep_list = [val for val in aired_list if val not in have_list]
-
-    for s in seas:
-        ep_list = [c for c in ep_list if c[0] != s]
-        ep_list.append((s, "-1"))
-    for h in have_seas:
-        ep_list = [c for c in ep_list if c[0] != h[0]]
-
-    return ep_list, ended, highest_season
-
-def get_sb_log(o):
-    start_day = str(datetime.today()).split(" ")[0]
-    setupLogger()
-    l = logging.getLogger("spiderbro")
-    if (o.debug_logging == True):
-        l.setLevel(logging.DEBUG)
-    else:
-        l.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
-    handler_stream = logging.StreamHandler()
-    handler_stream.setFormatter(formatter)
-    handler_stream.setLevel(logging.CRITICAL)
-    l.addHandler(handler_stream)
-    handler_file = logging.FileHandler('%s/spiderBro_%s.log' % (o.log_dir, start_day))
-    handler_file.setFormatter(formatter)
-    l.addHandler(handler_file)
-    l.info("")
-    l.info("SpiderBro, SpiderBro")
-    l.info("Finding episodes for your shows")
-    log_debug_info(o)
-    return l
-
-def get_shows_from_file(fname):
-    l = logging.getLogger('spiderbro')
-    try:
-        slist = []
-        f = open(fname)
+    def get_episode_list(self, series_name):
+        """
+        Return tuple:
+            (list) the list of episodes to be downloaded for a show, if any
+            (boolean) has_show_ended
+            (int) highest season in show
+        """
+        aired_list = []
+        have_list = []
+        highest_season = 1
+        ended = False
+        self.logger.info("Looking for eps for: %s" % (series_name))
+        # get the series id from db or web
+        series_id = self.get_series_id(series_name)
         try:
-            for line in f:
-                slist.append(line.replace("\n",""))
-        finally:
-            f.close()
-            return slist
-    except:
-        l.error("Cannot open shows file, exiting")
-        sys.exit()
 
-def normalize_series_name(name):
-    dir_id = str(name)
-    dir_id = str.lower(dir_id)
-    dir_id = dir_id.replace("::", "")
-    dir_id = dir_id.replace(": ", " ")
-    dir_id = dir_id.replace(":", " ")
-    dir_id = "".join(ch for ch in dir_id if ch not in ["!", "'", ":", "(", ")", ".", ","])
-    dir_id = dir_id.replace("&", "and")
-    dir_id = dir_id.replace(" ", "_") 
-    return dir_id
+            self.logger.debug("Using thetvdb ID: %s" % (series_id))
+            # now get the info for the series
+            data = BeautifulSoup(urllib2.urlopen("http://thetvdb.com/data/series/%s/all/" % str(series_id))).data
+            if(data.series.status.string == "Ended"):
+                ended = True
+
+            # iterate through data, get list of season/episodes for show starting from 1 (0 are specials)
+            for i in data.findAll('episode', recursive=False):
+                if(i.seasonnumber.string != '0'):
+                    season = i.seasonnumber.string
+                    ep = i.episodenumber.string
+                    try:
+                        fa = i.firstaired.string.split('-')
+                        airdate = date(int(fa[0]), int(fa[1]), int(fa[2]))
+                        # need to compare current date to air date, ignore if not aired yet
+                        if date.today() > airdate:
+                            aired_list.append((season, ep))
+                            highest_season = max(highest_season, int(i.seasonnumber.string))
+                    except:
+                        pass
+        except:
+            self.logger.error("\tCould not get episode list from thetvdb (timeout or invalid ID? Using ID: %s)" % (series_id))
+            self.logger.error("")
+            return [], False, highest_season
+
+        try:
+            # use the mysql lib to access xbmc db, cross check episode lists
+            l = self.db.xbmc_get_eps_for_show(series_name)
+            for i in l: have_list.append(i)
+
+            # create new db con to torrents db, populate from here aswell
+            l = self.db.get_eps_from_self(series_name)
+            for s, e in l: have_list.append((str(s), str(e)))
+
+        except ValueError as v:
+            self.logger.error("Database error?")
+            self.logger.error(str(v))
+            sys.exit()
+
+        have_s = list(set([h[0] for h in have_list]))
+        aired_s = list(set([a[0] for a in aired_list]))
+        if(ended):
+            seas = [c for c in aired_s if c not in have_s]
+        else:
+            seas = [c for c in aired_s if((c not in have_s) and (int(c) < highest_season))]
+
+        have_seas = [val for val in have_list if val[1] == "-1"]
+        ep_list = [val for val in aired_list if val not in have_list]
+
+        for s in seas:
+            ep_list = [c for c in ep_list if c[0] != s]
+            ep_list.append((s, "-1"))
+        for h in have_seas:
+            ep_list = [c for c in ep_list if c[0] != h[0]]
+
+        return ep_list, ended, highest_season
+
+    def normalize_series_name(self, name):
+        """
+        Return the tv show name stripped of any special characters, spaces replaced with _ and all in lower case
+        """
+        normalized_showname = str(name)
+        normalized_showname = str.lower(normalized_showname)
+        normalized_showname = normalized_showname.replace("::", "")
+        normalized_showname = normalized_showname.replace(": ", " ")
+        normalized_showname = normalized_showname.replace(":", " ")
+        normalized_showname = "".join(ch for ch in normalized_showname if ch not in ["!", "'", ":", "(", ")", ".", ","])
+        normalized_showname = normalized_showname.replace("&", "and")
+        normalized_showname = normalized_showname.replace(" ", "_") 
+        return normalized_showname
     
-#####################################################################################
-# The function that actually grabs our episodes
-#####################################################################################
-def hunt_eps(series_name, opts, search_list, s_masks, e_masks, ignore_tags):
-    l = logging.getLogger('spiderbro')
-    d = db_manager()
-    dir_id = normalize_series_name(series_name)
-    dir = opts.tv_dir + dir_id
+    def hunt_eps(self, series_name):
+        """
+        Find episodes on various torrent sites for some show
+        """
+        normalized_showname = self.normalize_series_name(series_name)
+        dir = self.config.tv_dir + normalized_showname
+        
+        is_high_quality = self.db.get_show_high_quality(series_name)
 
-    
-    is_high_quality = d.get_show_high_quality(series_name)
+        ep_list, ended, highest_season = self.get_episode_list(series_name)
 
-    ep_list, ended, highest_season = get_episode_list(series_name, opts)
-
-    if ended and not ep_list:
-        l.info("\tGot all episodes for this, skipping in future")
-        d.mark_show_finished(series_name)
-    elif ep_list:
-        # search for sX eX using every search site and every filemask until torrent is found
-        for s, e in ep_list:
-            found = False
-            # if searching for full season season use season mask list
-            if(e == "-1"):
-                l.info("Searching for entire season %s of %s" % (s, series_name))
-                masks_list = s_masks
-            else:
-                masks_list = e_masks
-            for site_ctor in search_list:
+        if ended and not ep_list:
+            self.logger.info("\tGot all episodes for this, skipping in future")
+            self.db.mark_show_finished(series_name)
+        elif ep_list:
+            # search for sX eX using every search site and every filemask until torrent is found
+            for s, e in ep_list:
+                found = False
+                # if searching for full season season use season mask list
+                if(e == "-1"):
+                    self.logger.info("Searching for entire season %s of %s" % (s, series_name))
+                    masks_list = self.season_masks
+                else:
+                    masks_list = self.episode_masks
+                for torrent_site_searcher_class in self.site_search_list:
+                    if not found:
+                        for mk_ctor in masks_list:
+                            if self.config.polite: time.sleep(self.config.polite_value)
+                            site = torrent_site_searcher_class()
+                            try:
+                                url = site.search(series_name, s, e, mk_ctor, self.ignore_taglist, is_high_quality)
+                                if url:
+                                    self.logger.info("\t\tFound torrent: %s" % url)
+                                    save_dir = dir
+                                    if(self.config.use_file_renamer):
+                                        save_dir = dir + "s" + s + "e" + e
+                                    dict = {'url':url, "save_dir":save_dir, 'showname':series_name, "season":s, "episode":e}
+                                    self.download_list.append(dict)
+                                    found = True
+                                    break
+                            except AttributeError as ex:
+                                self.logger.error("%s timed out?" % ex)
+                            except Exception, e:
+                                self.logger.error("Error: %s" % e)
+                                traceback.print_exc()
+                                #sys.exit()
                 if not found:
-                    for mk_ctor in masks_list:
-                        if opts.polite: time.sleep(opts.polite_value)
-                        site = site_ctor()
-                        try:
-                            url = site.search(series_name, s, e, mk_ctor, ignore_tags, is_high_quality)
-                            if url:
-                                l.info("\t\tFound torrent: %s" % url)
-                                save_dir = dir
-                                if(opts.use_file_renamer):
-                                    save_dir = dir + "s" + s + "e" + e
-                                dict = {'url':url, "save_dir":save_dir, 'showname':series_name, "season":s, "episode":e}
-                                dl_these.append(dict)
-                                found = True
-                                break
-                        except AttributeError as ex:
-                            l.error("%s timed out?" % ex)
-                        except Exception, e:
-                            l.error("Error: %s" % e)
-                            traceback.print_exc()
-                            #sys.exit()
-            if not found:
-                #check episode is not in current season, do not search again if so
-                ep_season = int(s)
-                # something goes weird here; opts.force_learn always evaluates as True using 'or opts.force_learn' - why?
-                if ((ep_season < highest_season) or ended or opts.force_learn == True):
-                    l.info("Cannot find torrent for: %s season %s episode %s - skipping this in future" % (series_name, s, e))
-                    d.add_to_urls_seen(series_name, s, e, "None", "None")
-            l.info("")
+                    #check episode is not in current season, do not search again if so
+                    ep_season = int(s)
+                    # something goes weird here; self.config.force_learn always evaluates as True using 'or self.config.force_learn' - why?
+                    if ((ep_season < highest_season) or ended or self.config.force_learn == True):
+                        self.logger.info("Cannot find torrent for: %s season %s episode %s - skipping this in future" % (series_name, s, e))
+                        self.db.add_to_urls_seen(series_name, s, e, "None", "None")
+                self.logger.info("")
 
-def log_debug_info(o):
-    """
-        Print out some debugging info about params
-    """
-    l = logging.getLogger("spiderbro")
-    l.debug("")
-    l.debug("Using params:")
-    dic = vars(o)
-    sopts = dic.keys()
-    sopts.sort()
-    for k in sopts:
-        l.debug("%s: %s" % (k, dic[k]))
-    l.debug("")
+    def get_torrent_download_list(self):
+        """
+        Searches for episodes of shows, populates spiderBros internal list of shows/urls to get
+        """
+        ignore_list = self.db.get_ignore_list()
+
+        if(self.config.all):
+            # if ALL, we get the complete list of shows from xbmc, minus the finished shows (if any)
+            self.logger.info("Scanning entire XBMC library, this could take some time...")
+            full_showlist = []
+            db_showlist = self.db.xbmc_get_showlist()
+            for show in db_showlist:
+                if(show[0].decode('latin-1', 'replace') not in ignore_list): full_showlist.append(show[0])
+            #TODO: add this to config file
+            get_trakt_watch_list = True
+            if(get_trakt_watch_list):
+                self.logger.info("Looking for shows from trakt.com watchlist")
+                # get the watchlist from trakt and add
+                traktlist = traktWatchlistScraper("thegom145", "b837e9f111dcae8e279711ce929e9ef1")
+                full_showlist.extend(t for t in traktlist if t.decode('latin-1', 'replace') not in ignore_list)
+                full_showlist.sort()
+            for show in full_showlist:
+                if(show.decode('latin-1', 'replace') not in ignore_list):
+                    self.hunt_eps(show)
+
+        else:
+            # if SHOW, get specified show
+            if(self.config.show):
+                self.hunt_eps(self.config.show)
+            
+            # else EXIT
+            else:
+                self.logger.info("No shows to download, exiting")
+
+        return self.download_list
 
 def traktWatchlistScraper(username, key):
     """
         returns a list of shows from the watchlist of a trakt user
     """
-
-    l = logging.getLogger("spiderbro")
-    url = "http://api.trakt.tv/user/watchlist/shows.json/"+ key +"/" + username
-    response = urllib2.urlopen(url)
-    data = json.load(response)
-    watchlist = [i["title"] for i in data]
-    l.debug("Got list of watched shows from trakt.com:")
-    for show in watchlist: l.debug(show)
+    watchlist = []
+    try:
+        l = logging.getLogger("spiderbro")
+        url = "http://api.trakt.tv/user/watchlist/shows.json/"+ key +"/" + username
+        response = urllib2.urlopen(url)
+        data = json.load(response)
+        watchlist = [i["title"] for i in data]
+        l.debug("Got list of watched shows from trakt.com:")
+        for show in watchlist: l.debug(show)
+    except:
+        pass
     return watchlist
 
 
-#
-# Deferred callbacks for twisted
-#
-def on_connect_fail(result):
-    """
-        Deferred callback function to be called when an error is encountered
-    """
-    l = logging.getLogger('spiderbro')
-    l.info("Connection failed!")
-    l.info("result: %s" % result)
-    sys.exit()
-
-
-def on_connect_success(result):
-    """
-        Deferred callback function called when we connect
-    """
-    d = db_manager()
-    l = logging.getLogger('spiderbro')
-    init_list = []
-    l.info("Connection to deluge was successful, result code: %s" % result)
-    # need a callback for when torrent added completes
-    def add_tor(key, val):
-        l.info("---> Added Torrent: %s" % (val))
-    
-    # TODO: get rid of this nasty global variable
-    for tp in dl_these:
-        di = {'download_location':tp['save_dir']}
-        # added support for magnet links
-        if(str(tp["url"]).startswith("magnet:")):
-            df = client.core.add_torrent_magnet(tp["url"], di).addCallback(add_tor, tp["url"])
-        else:
-            df = client.core.add_torrent_url(tp["url"], di).addCallback(add_tor, tp["url"])
-        init_list.append(df)
-        #add url to database - ideally would be nice to do this in callback, but dont have info there?
-        d.add_to_urls_seen(tp['showname'], tp['season'], tp['episode'], tp['url'], tp['save_dir'])
-
-    dl = defer.DeferredList(init_list)
-    dl.addCallback(dl_finish)
-
-def dl_finish(result):
-    """
-        Deferred callback function for clean exit
-    """
-    l = logging.getLogger('spiderbro')
-    l.info("All deferred calls have fired, exiting program...")
-    client.disconnect()
-    # Stop the twisted main loop and exit
-    reactor.stop()
 
 if __name__ == '__main__':
     unittest.main()
