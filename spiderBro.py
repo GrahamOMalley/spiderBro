@@ -11,10 +11,12 @@ from datetime import datetime
 from spiderBroAPI import *
 
 startTime = datetime.now()
-e_masks = [sNeN, NxN, NNN]
-s_masks = [season, series]
+e_masks = [SNEN, NxN, NNN]
+s_masks = [Season, Series]
 ignore_taglist = ["SWESUB", "SPANISH", "GERMAN", "HBOGO"]
-search_list = [piratebaysearch]
+search_list = [PirateBaySearch]
+search_list = [KATSearch]
+#search_list = [ExtraTorrentSearch]
 socket.setdefaulttimeout(10)
 
 # Get our config file and script arguments

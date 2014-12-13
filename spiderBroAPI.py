@@ -21,27 +21,25 @@ from twisted.internet import reactor
 
 from db_manager import db_manager
 
-import unittest
-
 #####################################################################################
 # Filemasks
 #####################################################################################
 
-class season:
+class Season:
     def __init__(self):
-        self.descr = "season"
+        self.descr = "Season"
     def mask(self, sn, ep):
         return ("season %s" % sn)
 
-class series:
+class Series:
     def __init__(self):
-        self.descr = "series"
+        self.descr = "Series"
     def mask(self, sn, ep):
         return ("series %s" % sn)
 
-class sNeN:
+class SNEN:
     def __init__(self):
-        self.descr = "sNeN"
+        self.descr = "SNEN"
     def mask(self, sn, ep):
         s = "s0" + sn if(int(sn)<10) else "s" + sn
         e = "e0" + ep if(int(ep)<10) else "e" + ep
@@ -64,7 +62,7 @@ class NNN:
 #####################################################################################
 # Searches
 #####################################################################################
-class base_search:
+class BaseSearch:
     def __init__(self):
         self.name = "Base Search Class"
         self.delimiter = " "
@@ -86,21 +84,28 @@ class base_search:
             search_url = self.get_search_url(series_search_term, season_or_ep_str)
             lg.info("\tSearching %s:\t%s %s \t\t(%s)" % (self.name, series_search_term, season_or_ep_str, search_url))
             try:
-                response = urllib2.urlopen(search_url)
+                #response = urllib2.urlopen(search_url)
+                # TODO: add a headers member to the base search class
+                # then have a loop here that builds up the request with the appropriate headers
+                # the ones below work for extratorrent, use firefox dev edition to see what headers work on other sites
+                request = urllib2.Request(search_url)
+                request.add_header('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8')
+                request.add_header('User-Agent', "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:35.0) Gecko/20100101 Firefox/35.0")
+                response = urllib2.urlopen(request)
                 search_page = response.read()
+                sps = BeautifulSoup(search_page)
+                links = sps.findAll('a', href=re.compile(self.get_links_from_main_page_re()))
+                for l in links:
+                    if self.validate_link(series_search_term, season_or_ep_str, l['href'], tags, is_high_qual, is_season):
+                        if self.validate_page(l['href']):
+                            if self.can_get_tor_from_main_page:
+                                return l['href']
+                            else:
+                                return self.get_torrent_from_validated_page(l['href'])
             except:
                 lg.error("Couldn't open %s" % search_url)
-                lg.error("Shutting down sb, check that url is accessible")
-                sys.exit()
-            sps = BeautifulSoup(search_page)
-            links = sps.findAll('a', href=re.compile(self.get_links_from_main_page_re()))
-            for l in links:
-                if self.validate_link(series_search_term, season_or_ep_str, l['href'], tags, is_high_qual, is_season):
-                    if self.validate_page(l['href']):
-                        if self.can_get_tor_from_main_page:
-                            return l['href']
-                        else:
-                            return self.get_torrent_from_validated_page(l['href'])
+                #lg.error("Shutting down sb, check that url is accessible")
+                #sys.exit()
         return ""
 
     def get_links_from_main_page_re(self):
@@ -144,15 +149,19 @@ class base_search:
             # we are searching for an episode
             delims = [self.delimiter, "."]
             for d in delims:
-                if (s_ep_str in link.lower() and  d.join(series.split(" ")).lower() in link.lower()):
+                if (self.validate_delims(series, s_ep_str, d, link)):
                     return True
                 else:
                     lg.debug("\t\t\tValidation FAILED: s_ep_str %s or %s not found in link title" % (s_ep_str, d.join(series.split(" ")).lower()))
-
         
         return False
 
-    # child classes can define their own site-specific page validation, see piratebaysearch for an example
+    def validate_delims(self, series, s_ep_str, delim, link):
+        if (s_ep_str in link.lower() and  d.join(series.split(" ")).lower() in link.lower()):
+            return True
+        return False
+
+    # child classes can define their own site-specific page validation, see PirateBaySearch for an example
     def validate_page(self, tor):
         lg = logging.getLogger('spiderbro')
         lg.debug("\tbase: validate page (return true)")
@@ -197,7 +206,7 @@ class base_search:
         return ".*torrent$"
 
 # Child classes need to define self.delimiter, get_search_url and optionally validate_page 
-class piratebaysearch(base_search):
+class PirateBaySearch(BaseSearch):
     def __init__(self):
         self.name = "piratebay"
         self.delimiter = "+"
@@ -212,7 +221,7 @@ class piratebaysearch(base_search):
         return "^magnet"
 
     def get_search_url(self, name, maskval):
-        return "http://pirateproxy.net/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
+        return "http://pirateproxy.bz/search/"+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "/0/7/0"
     
     def validate_page(self, tor):
         return True
@@ -220,7 +229,7 @@ class piratebaysearch(base_search):
         seeds_reg = re.compile("Seeders:</dt>\n<dd>[0-9]{1,9}")
         lg = logging.getLogger('spiderbro')
         lg.debug("\t\tDoing piratebay page validation")
-        turl = tor.replace("http://torrents.pirateproxy.net", "http://pirateproxy.net/torrent")
+        turl = tor.replace("http://torrents.pirateproxy.bz", "http://pirateproxy.bz/torrent")
         resp = urllib2.urlopen(turl)
         html = resp.read()
         data = BeautifulSoup(html)
@@ -238,7 +247,40 @@ class piratebaysearch(base_search):
             lg.debug("\t\tValidation FAILED, torrent has no seeds...")
         return False
 
-class extratorrentsearch(base_search):
+class KATSearch(BaseSearch):
+    def __init__(self):
+        self.name = "kickasstorrents"
+        self.delimiter = "+"
+        self.can_get_tor_from_main_page = True
+
+    def get_is_link_a_torrent_re(self):
+        return "^magnet"
+
+    def get_links_from_main_page_re(self):
+        return "^magnet"
+
+    def get_search_url(self, name, maskval):
+        return "https://kickass.unblocked.pw/usearch/" + " ".join(name.split(" ")).replace("'","")+" "+" ".join(maskval.split(" ")) + "/"
+
+    def validate_page(self, tor):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\t\tDoing KAT page validation for: "+tor)
+        lg.debug("\t\tNot Implemented: extratorrent page validation, returning true")
+        return True
+
+    def get_torrent_from_validated_page(self, page):
+        lg = logging.getLogger('spiderbro')
+        lg.debug("\t\tConverting torrent url to kat format : "+page)
+        return "http://kickass.unblocked.pw/" + page.replace("torrent_", "")
+    
+    def validate_delims(self, series, s_ep_str, delim, link):
+        series = series.replace(".","+")
+        DEUBGME= delim.join(series.split(" ")).lower() 
+        if (s_ep_str in link.lower() and  delim.join(series.split(" ")).lower() in link.lower()):
+            return True
+        return False
+
+class ExtraTorrentSearch(BaseSearch):
     def __init__(self):
         self.name = "extratorrent"
         self.delimiter = "."
@@ -248,7 +290,7 @@ class extratorrentsearch(base_search):
         return ".*torrent$"
 
     def get_search_url(self, name, maskval):
-        return "http://extratorrent.com/search/?search=" + "+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "&new=1&x=0&y=0"
+        return "http://extratorrent.cc/search/?search=" + "+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" ")) + "&new=1&x=0&y=0"
 
     def validate_page(self, tor):
         lg = logging.getLogger('spiderbro')
@@ -259,9 +301,9 @@ class extratorrentsearch(base_search):
     def get_torrent_from_validated_page(self, page):
         lg = logging.getLogger('spiderbro')
         lg.debug("\t\tConverting torrent url to ext format : "+page)
-        return "http://extratorrent.com" + page.replace("torrent_", "")
+        return "http://extratorrent.cc" + page.replace("torrent_", "")
 
-class isohuntsearch(base_search):
+class IsoHuntSearch(BaseSearch):
     def __init__(self):
         self.name = "isohunt"
         self.delimiter = "+"
@@ -292,51 +334,6 @@ class isohuntsearch(base_search):
         lg.debug("\t\tNot Implemented: isohunt page validation, returning true")
         return True
 
-# RIP BTJunkie :(
-# leaving this dead class here as an example of how to override the base class
-class btjunkiesearch(base_search):
-    def __init__(self):
-        self.name = "btjunkie"
-        self.delimiter = "-"
-    
-    def get_search_url(self, name, maskval):
-        return "http://btjunkie.se/search?q="+"+".join(name.split(" ")).replace("'","")+"+"+"+".join(maskval.split(" "))
-
-    def validate_page(self, tor):
-        lg = logging.getLogger('spiderbro')
-        lg.debug("\t\tDoing btjunkie page validation")
-        g = re.compile(r'Good\((.*?)\)', re.DOTALL)
-        f = re.compile(r'Fake\((.*?)\)', re.DOTALL) 
-        good = 0
-        fake = 0
-        turl = tor.replace("/download.torrent", "").replace("dl.", "")
-        resp = urllib2.urlopen(turl)
-        
-        val_page = resp.read()
-        val_tags = BeautifulSoup(val_page)
-
-        # first check if btjunkie verified image is present
-        im = val_tags.findAll('img')
-        for i in im:
-            if(i['src'] == "http://static.btjunkie.se/images/verified_check1.gif"):
-                lg.debug("\t\tValidated (validation check image is present)")
-                return True
-
-        # otherwise check if good > fake (Check seeds > 0)
-        b = val_tags.findAll('b')
-        for bs in b:
-            if bs.string:
-                if g.match(bs.string):
-                    good = int(g.findall(bs.string)[0])
-                    li = bs.string.split(" ")
-                    for v in li:
-                        if f.match(v):
-                            fake = int(f.findall(v)[0])
-        if(good > fake):
-            return True
-        else:
-            lg.debug("\t\tValidation FAILED: good <= fake (good: %s fake: %s)" % (good, fake))
-            return False
 
 def get_configuration():
     """
@@ -507,7 +504,7 @@ class SpiderBro:
             try:
                 page = urllib2.urlopen("http://thetvdb.com/api/GetSeries.php?seriesname=%s" % urllib2.quote(series_name))
                 soup = BeautifulSoup(page)
-                sid = int(soup.data.series.seriesiself.db.string)
+                sid = int(soup.data.series.seriesid.string)
                 self.logger.debug("\t\tGot series ID from tvdb: %s" % sid)
                 self.db.add_show(sid, series_name, 0)
                 return sid
@@ -676,7 +673,7 @@ class SpiderBro:
                 self.logger.info("Looking for shows from trakt.com watchlist")
                 # get the watchlist from trakt and add
                 traktlist = traktWatchlistScraper("thegom145", "b837e9f111dcae8e279711ce929e9ef1")
-                full_showlist.extend(t for t in traktlist if t.decode('latin-1', 'replace') not in ignore_list)
+                full_showlist.extend(t for t in traktlist if t.decode('latin-1', 'replace') not in ignore_list and t not in full_showlist)
                 full_showlist.sort()
             for show in full_showlist:
                 if(show.decode('latin-1', 'replace') not in ignore_list):
@@ -708,9 +705,3 @@ def traktWatchlistScraper(username, key):
         for show in watchlist: l.debug(show)
     except:
         pass
-    return watchlist
-
-
-
-if __name__ == '__main__':
-    unittest.main()
