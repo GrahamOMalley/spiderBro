@@ -9,6 +9,18 @@ import fnmatch
 import logging
 import gomXBMCTools
 
+##########
+print('os.cwd:')
+print(os.getcwd())
+
+print('file (arg[0]):')
+print(sys.argv[0])
+
+# its [0] of the split statement
+print('file dir (arg[0]):')
+print(os.path.split(sys.argv[0]))
+##########
+
 dbfile = "/home/gom/code/python/spider_bro/spiderbro.db" 
 logdir= "/home/gom/log/spiderbro"
 target = "/media/nasGom/video/tv/"
